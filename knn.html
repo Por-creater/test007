@@ -23,6 +23,15 @@
         <input type="range" id="k" min="1" max="11" step="2" value="3">
         <output id="kVal">3</output>
       </div>
+      <div class="control">
+        <label for="metric">distance metric</label>
+        <select id="metric">
+          <option value="euclidean">Euclidean</option>
+          <option value="manhattan">Manhattan</option>
+          <option value="chebyshev">Chebyshev</option>
+        </select>
+      </div>
+      <label class="control"><input type="checkbox" id="weightedChk"> distance-weighted vote</label>
       <button class="btn" id="resetBtn">New random points</button>
       <span class="muted">click anywhere on the chart to place a query point</span>
     </div>
@@ -36,6 +45,15 @@
       <span class="item"><span class="swatch" style="background:var(--series-7)"></span>query point</span>
     </div>
   </div>
+
+  <h2>Choice of distance metric</h2>
+  <p><strong>Euclidean</strong> (straight-line) distance is the default. <strong>Manhattan</strong>
+  distance sums the axis-aligned differences — it favors neighbors that are close on
+  <em>every</em> feature rather than very close on one and far on another.
+  <strong>Chebyshev</strong> distance only looks at the single largest axis difference.
+  Switching metrics can change which points count as "nearest," and therefore the
+  prediction, even with k and the data held fixed. Turning on distance-weighted voting
+  lets closer neighbors outvote farther ones instead of every neighbor counting equally.</p>
 
   <h2>Distance-based, not model-based</h2>
   <p>Because kNN stores the whole dataset and computes distances at prediction time,
@@ -70,14 +88,26 @@
 
   var query = { x: W / 2, y: H / 2 };
   var k = 3;
+  var metric = "euclidean";
+  var weighted = false;
+
+  function distance(p, q) {
+    var dx = Math.abs(p.x - q.x), dy = Math.abs(p.y - q.y);
+    if (metric === "manhattan") return dx + dy;
+    if (metric === "chebyshev") return Math.max(dx, dy);
+    return Math.hypot(dx, dy);
+  }
 
   function classify() {
     var withDist = points.map(function (p) {
-      return { p: p, d: Math.hypot(p.x - query.x, p.y - query.y) };
+      return { p: p, d: distance(p, query) };
     }).sort(function (a, b) { return a.d - b.d; });
     var neighbors = withDist.slice(0, k);
     var votes = { 0: 0, 1: 0 };
-    neighbors.forEach(function (n) { votes[n.p.cls]++; });
+    neighbors.forEach(function (n) {
+      var w = weighted ? 1 / (n.d + 8) : 1;
+      votes[n.p.cls] += w;
+    });
     var pred = votes[0] >= votes[1] ? 0 : 1;
     return { neighbors: neighbors, votes: votes, pred: pred };
   }
@@ -113,7 +143,7 @@
     svg.appendChild(MLViz.svgEl("circle", { cx: query.x, cy: query.y, r: 6.5, fill: qColor, stroke: "#fff", "stroke-width": 2 }));
 
     document.getElementById("statPred").textContent = result.pred === 0 ? "Class A" : "Class B";
-    document.getElementById("statVote").textContent = result.votes[0] + " – " + result.votes[1];
+    document.getElementById("statVote").textContent = result.votes[0].toFixed(2) + " – " + result.votes[1].toFixed(2);
   }
 
   function svgPoint(evt) {
@@ -136,6 +166,8 @@
     render();
   });
   document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); render(); });
+  document.getElementById("metric").addEventListener("change", function (e) { metric = e.target.value; render(); });
+  document.getElementById("weightedChk").addEventListener("change", function (e) { weighted = e.target.checked; render(); });
 
   makePoints();
   render();
