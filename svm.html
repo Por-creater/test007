@@ -23,6 +23,11 @@
         <input type="range" id="cslider" min="-2" max="2" step="0.1" value="0.5">
         <output id="cVal">3.2</output>
       </div>
+      <div class="control">
+        <label for="classWeight">class weight (favor −1 ↔ favor +1)</label>
+        <input type="range" id="classWeight" min="-0.8" max="0.8" step="0.05" value="0">
+        <output id="classWeightVal">0.00</output>
+      </div>
       <button class="btn" id="resetBtn">New random points</button>
     </div>
     <div class="stat-row">
@@ -46,6 +51,13 @@
   <code>max(0, 1 − yᵢ(w·xᵢ+b))</code> plus an L2 penalty <code>‖w‖²/(2C)</code>
   via gradient descent — the same objective a QP solver would reach exactly, just
   approximated iteratively so it can retrain instantly in the browser.</p>
+
+  <h2>Class weight</h2>
+  <p>Real datasets are often imbalanced, and sklearn's <code>class_weight</code>
+  parameter lets you tell the SVM to care more about mistakes on one class than the
+  other. Sliding toward "favor +1" scales up the penalty for misclassifying blue
+  points, so the boundary shifts away from blue to protect it — even though nothing
+  about the data itself changed.</p>
 </main>
 
 <script src="assets/main.js"></script>
@@ -70,17 +82,20 @@
     }
   }
 
-  function trainSVM(C) {
+  function trainSVM(C, classWeight) {
+    classWeight = classWeight || 0;
+    var wPos = Math.max(0.15, 1 + classWeight), wNeg = Math.max(0.15, 1 - classWeight);
     var lambda = 1 / C;
     var w = [0, 0], b = 0;
     var lr = 0.02;
     for (var epoch = 0; epoch < 400; epoch++) {
       points.forEach(function (p) {
+        var cw = p.cls === 1 ? wPos : wNeg;
         var margin = p.cls * (w[0] * p.x + w[1] * p.y + b);
         if (margin < 1) {
-          w[0] += lr * (p.cls * p.x - lambda * w[0]);
-          w[1] += lr * (p.cls * p.y - lambda * w[1]);
-          b += lr * p.cls;
+          w[0] += lr * (cw * p.cls * p.x - lambda * w[0]);
+          w[1] += lr * (cw * p.cls * p.y - lambda * w[1]);
+          b += lr * cw * p.cls;
         } else {
           w[0] += lr * (-lambda * w[0]);
           w[1] += lr * (-lambda * w[1]);
@@ -95,7 +110,9 @@
     var C = Math.pow(10, Cexp);
     document.getElementById("cVal").textContent = C.toFixed(1);
 
-    var model = trainSVM(C);
+    var classWeight = parseFloat(document.getElementById("classWeight").value);
+    document.getElementById("classWeightVal").textContent = classWeight.toFixed(2);
+    var model = trainSVM(C, classWeight);
     var w = model.w, b = model.b;
     var wNorm = Math.hypot(w[0], w[1]) || 1e-6;
 
@@ -137,6 +154,7 @@
   }
 
   document.getElementById("cslider").addEventListener("input", render);
+  document.getElementById("classWeight").addEventListener("input", render);
   document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); render(); });
 
   makePoints();
