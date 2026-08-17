@@ -20,6 +20,11 @@
       <button class="btn primary" id="fitBtn">Fit best line (least squares)</button>
       <button class="btn" id="resetBtn">New random points</button>
       <label class="control"><input type="checkbox" id="residualsChk" checked> show residuals</label>
+      <div class="control">
+        <label for="lambda">L2 regularization (λ)</label>
+        <input type="range" id="lambda" min="0" max="8" step="0.2" value="0">
+        <output id="lambdaVal">0.0</output>
+      </div>
     </div>
     <div class="stat-row">
       <div class="stat"><div class="num" id="statW">–</div><div class="lbl">slope w</div></div>
@@ -42,6 +47,13 @@
   <code>w = Σ(x−x̄)(y−ȳ) / Σ(x−x̄)²</code> and <code>b = ȳ − w·x̄</code>. This is the same
   line that a single step of gradient descent converges to when trained on squared error —
   regression has an exact algebraic solution, no iteration required.</p>
+
+  <h2>Regularization (λ)</h2>
+  <p>Dragging λ up switches from plain least squares to <strong>ridge regression</strong>:
+  <code>w = Σ(x−x̄)(y−ȳ) / (Σ(x−x̄)² + λ)</code>. The penalty shrinks the slope toward
+  zero, trading a little fit quality for a line that's less sensitive to any single
+  point — useful when points are noisy or few. Push λ high and watch the line flatten
+  toward the mean.</p>
 </main>
 
 <script src="assets/main.js"></script>
@@ -69,13 +81,14 @@
     }
   }
 
-  function fit() {
+  function fit(lambda) {
+    lambda = lambda || 0;
     var n = points.length, mx = 0, my = 0;
     points.forEach(function (p) { mx += p.x; my += p.y; });
     mx /= n; my /= n;
     var num = 0, den = 0;
     points.forEach(function (p) { num += (p.x - mx) * (p.y - my); den += (p.x - mx) * (p.x - mx); });
-    var w = den === 0 ? 0 : num / den;
+    var w = (den + lambda) === 0 ? 0 : num / (den + lambda);
     var b = my - w * mx;
     return { w: w, b: b };
   }
@@ -107,7 +120,8 @@
     svg.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(0), x2: sx(10), y2: sy(0), stroke: "var(--baseline)", "stroke-width": 1.5 }));
     svg.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(0), x2: sx(0), y2: sy(10), stroke: "var(--baseline)", "stroke-width": 1.5 }));
 
-    var f = fit();
+    var lambda = parseFloat(document.getElementById("lambda").value);
+    var f = fit(lambda);
     var m = metrics(f.w, f.b);
 
     if (showResiduals) {
@@ -173,6 +187,10 @@
   document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); render(); });
   document.getElementById("residualsChk").addEventListener("change", function (e) {
     showResiduals = e.target.checked; render();
+  });
+  document.getElementById("lambda").addEventListener("input", function (e) {
+    document.getElementById("lambdaVal").textContent = parseFloat(e.target.value).toFixed(1);
+    render();
   });
 
   makePoints();
