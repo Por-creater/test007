@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag deep">11 · Deep Learning · Attention</p>
+  <h1>Transformer — Self-Attention</h1>
+  <p class="lede">For every token, self-attention computes a weight against every
+  <em>other</em> token in the sequence — "how relevant is that word to understanding
+  this one" — and builds the token's new representation as a weighted blend of every
+  other token's value vector. No recurrence, no convolution: every position can look
+  directly at every other position in one step.</p>
+
+  <div class="viz-wrap">
+    <div class="muted" style="margin-bottom:10px;">hover or click a token to see what it attends to</div>
+    <svg id="arcs" viewBox="0 0 640 150" width="640" height="150"></svg>
+  </div>
+
+  <div class="viz-wrap">
+    <div class="muted" style="margin-bottom:10px;">full attention matrix (row = query token, column = key token)</div>
+    <svg id="heatmap" viewBox="0 0 400 400" width="400" height="400"></svg>
+  </div>
+
+  <p class="muted">Each row sums to 1 — it's a softmax over similarity scores between
+  the query token's Q vector and every token's K vector. Brighter cells mean a
+  larger share of that row's attention "budget" goes to that column.</p>
+
+  <h2>Why this replaced recurrence</h2>
+  <p>An RNN/LSTM has to pass information step by step through the sequence, so a
+  dependency between token 1 and token 50 has to survive 49 hops. Self-attention
+  connects any two positions directly, which is both easier to learn and trivially
+  parallelizable across the whole sequence at once.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(99);
+  var tokens = ["The", "cat", "sat", "on", "the", "mat"];
+  var n = tokens.length, dim = 4;
+
+  function randVec() { var v = []; for (var i = 0; i < dim; i++) v.push(rand() * 2 - 1); return v; }
+  var Q = [], K = [];
+  for (var i = 0; i < n; i++) { Q.push(randVec()); K.push(randVec()); }
+
+  // nudge some scores so nearby / related tokens attend more (for a legible demo)
+  function bonus(i, j) {
+    var dist = Math.abs(i - j);
+    var b = -dist * 0.35;
+    if ((tokens[i] === "cat" && tokens[j] === "sat") || (tokens[i] === "sat" && tokens[j] === "cat")) b += 1.6;
+    if ((tokens[i] === "mat" && tokens[j] === "on") || (tokens[i] === "on" && tokens[j] === "mat")) b += 1.2;
+    if (i === j) b += 0.6;
+    return b;
+  }
+
+  function dot(a, b) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i] * b[i]; return s; }
+
+  var attn = [];
+  for (var qi = 0; qi < n; qi++) {
+    var scores = [];
+    for (var ki = 0; ki < n; ki++) scores.push(dot(Q[qi], K[ki]) / Math.sqrt(dim) + bonus(qi, ki));
+    var mx = Math.max.apply(null, scores);
+    var exps = scores.map(function (s) { return Math.exp(s - mx); });
+    var sum = exps.reduce(function (a, b) { return a + b; }, 0);
+    attn.push(exps.map(function (e) { return e / sum; }));
+  }
+
+  var arcsSvg = document.getElementById("arcs");
+  var heatSvg = document.getElementById("heatmap");
+  var selected = 1;
+
+  function seqX(i) { return 50 + i * (540 / (n - 1)); }
+
+  function renderArcs() {
+    arcsSvg.innerHTML = "";
+    var y = 110;
+    for (var i = 0; i < n; i++) {
+      var w = attn[selected][i];
+      if (i === selected) continue;
+      var x0 = seqX(selected), x1 = seqX(i);
+      var mx = (x0 + x1) / 2;
+      var d = "M" + x0 + "," + y + " Q" + mx + "," + (y - 20 - w * 90) + " " + x1 + "," + y;
+      arcsSvg.appendChild(MLViz.svgEl("path", {
+        d: d, fill: "none", stroke: "var(--series-1)", "stroke-width": Math.max(0.6, w * 10), opacity: Math.max(0.15, w)
+      }));
+    }
+    for (var j = 0; j < n; j++) {
+      var isSel = j === selected;
+      var g = MLViz.svgEl("g", { style: "cursor:pointer" });
+      g.appendChild(MLViz.svgEl("circle", { cx: seqX(j), cy: y, r: isSel ? 16 : 13, fill: isSel ? "var(--series-2)" : "var(--surface-2)", stroke: "var(--border)", "stroke-width": 1.2 }));
+      var t = MLViz.svgEl("text", { x: seqX(j), y: y + 4, "text-anchor": "middle", "font-size": 11.5, fill: isSel ? "#fff" : "var(--text-primary)" });
+      t.textContent = tokens[j];
+      g.appendChild(t);
+      g.addEventListener("click", function (idx) { return function () { selected = idx; renderArcs(); renderHeatmap(); }; }(j));
+      g.addEventListener("mouseenter", function (idx) { return function () { selected = idx; renderArcs(); renderHeatmap(); }; }(j));
+      arcsSvg.appendChild(g);
+    }
+  }
+
+  function blueStep(v) {
+    // sequential blue ramp, light -> dark by magnitude
+    var steps = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+    var idx = Math.min(steps.length - 1, Math.floor(v * steps.length));
+    return steps[idx];
+  }
+
+  function renderHeatmap() {
+    heatSvg.innerHTML = "";
+    var pad = 70, cs = (400 - pad) / n;
+    for (var r = 0; r < n; r++) {
+      var lt = MLViz.svgEl("text", { x: pad - 10, y: pad + r * cs + cs / 2 + 4, "text-anchor": "end", "font-size": 11, fill: r === selected ? "var(--text-primary)" : "var(--text-muted)" });
+      lt.textContent = tokens[r];
+      heatSvg.appendChild(lt);
+      for (var c = 0; c < n; c++) {
+        var v = attn[r][c];
+        var rect = MLViz.svgEl("rect", {
+          x: pad + c * cs, y: pad + r * cs, width: cs - 1.5, height: cs - 1.5,
+          fill: blueStep(v),
+          stroke: r === selected ? "var(--series-8)" : "transparent",
+          "stroke-width": r === selected ? 1.5 : 0
+        });
+        rect.style.cursor = "pointer";
+        rect.addEventListener("click", function (row) { return function () { selected = row; renderArcs(); renderHeatmap(); }; }(r));
+        heatSvg.appendChild(rect);
+      }
+    }
+    for (var cc = 0; cc < n; cc++) {
+      var ct = MLViz.svgEl("text", {
+        x: pad + cc * cs + cs / 2, y: pad - 12, "text-anchor": "middle", "font-size": 11,
+        fill: "var(--text-muted)", transform: "rotate(-40 " + (pad + cc * cs + cs / 2) + " " + (pad - 12) + ")"
+      });
+      ct.textContent = tokens[cc];
+      heatSvg.appendChild(ct);
+    }
+  }
+
+  renderArcs();
+  renderHeatmap();
+})();
+</script>
+</body>
+</html>

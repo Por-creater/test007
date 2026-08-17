@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LSTM | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag deep">10 · Deep Learning · Recurrent Network</p>
+  <h1>LSTM — Long Short-Term Memory</h1>
+  <p class="lede">At every time step an LSTM cell decides three things with learned
+  <strong>gates</strong>: how much of the old memory to <strong>forget</strong>, how much of
+  the new candidate value to <strong>write in</strong>, and how much of the memory to
+  <strong>output</strong> as the hidden state. That gating is what lets it carry information
+  across many steps without it decaying or exploding.</p>
+
+  <div class="viz-wrap">
+    <div class="muted" style="margin-bottom:6px;">cell state c(t) and hidden state h(t) across the sequence</div>
+    <svg id="seriesChart" viewBox="0 0 640 190" width="640" height="190"></svg>
+    <div class="controls">
+      <button class="btn primary" id="stepBtn">Step ▸</button>
+      <button class="btn" id="playBtn">▶ Play</button>
+      <button class="btn" id="resetBtn">Reset sequence</button>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>cell state c(t)</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>hidden state h(t)</span>
+    </div>
+  </div>
+
+  <div class="viz-wrap">
+    <div class="muted" style="margin-bottom:10px;">gate activations at the current time step</div>
+    <div id="gateBars"></div>
+  </div>
+
+  <p class="muted">Gate values sit in (0, 1) — near 0 means "block," near 1 means
+  "pass through." Watch the forget gate: when it's low, the cell state resets toward
+  the new candidate value instead of carrying the past forward.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(88);
+  function r() { return (rand() * 2 - 1) * 1.6; }
+  var weights = {
+    Wf: r(), Uf: r(), bf: r() * 0.5,
+    Wi: r(), Ui: r(), bi: r() * 0.5,
+    Wo: r(), Uo: r(), bo: r() * 0.5,
+    Wg: r(), Ug: r(), bg: r() * 0.5
+  };
+  var seq = [];
+  for (var t = 0; t < 14; t++) seq.push(Math.sin(t * 0.7) * 0.8 + (rand() - 0.5) * 0.3);
+
+  function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+  function tanh(x) { return Math.tanh(x); }
+
+  var t = -1, c = 0, h = 0;
+  var history = [];
+  var lastGates = null;
+
+  function stepOnce() {
+    t++;
+    if (t >= seq.length) { t = 0; c = 0; h = 0; history = []; }
+    var x = seq[t];
+    var f = sigmoid(weights.Wf * x + weights.Uf * h + weights.bf);
+    var i = sigmoid(weights.Wi * x + weights.Ui * h + weights.bi);
+    var o = sigmoid(weights.Wo * x + weights.Uo * h + weights.bo);
+    var g = tanh(weights.Wg * x + weights.Ug * h + weights.bg);
+    c = f * c + i * g;
+    h = o * tanh(c);
+    lastGates = { f: f, i: i, o: o, g: g, x: x };
+    history.push({ t: t, c: c, h: h });
+  }
+
+  var svg = document.getElementById("seriesChart");
+  var W = 640, H = 190, PAD = 30;
+  function sx(ti) { return PAD + ti / (seq.length - 1) * (W - PAD * 2); }
+  function sy(v) { return H / 2 - v * (H / 2 - 20); }
+
+  function renderChart() {
+    svg.innerHTML = "";
+    svg.appendChild(MLViz.svgEl("line", { x1: PAD, y1: sy(0), x2: W - PAD, y2: sy(0), stroke: "var(--baseline)", "stroke-width": 1 }));
+    seq.forEach(function (_, idx) {
+      svg.appendChild(MLViz.svgEl("line", { x1: sx(idx), y1: 14, x2: sx(idx), y2: H - 14, stroke: "var(--grid)", "stroke-width": 1 }));
+    });
+
+    function path(key, color) {
+      if (history.length < 1) return;
+      var d = "";
+      history.forEach(function (pt, idx) {
+        d += (idx === 0 ? "M" : "L") + sx(pt.t) + "," + sy(pt[key]) + " ";
+      });
+      svg.appendChild(MLViz.svgEl("path", { d: d, fill: "none", stroke: color, "stroke-width": 2.4 }));
+      history.forEach(function (pt) {
+        svg.appendChild(MLViz.svgEl("circle", { cx: sx(pt.t), cy: sy(pt[key]), r: 3.5, fill: color }));
+      });
+    }
+    path("c", "var(--series-1)");
+    path("h", "var(--series-2)");
+  }
+
+  function renderGates() {
+    var wrap = document.getElementById("gateBars");
+    wrap.innerHTML = "";
+    if (!lastGates) { wrap.innerHTML = '<p class="muted">click "step" to begin</p>'; return; }
+    var rows = [
+      ["forget f(t)", lastGates.f, "var(--series-8)"],
+      ["input i(t)", lastGates.i, "var(--series-1)"],
+      ["candidate g(t) (tanh, −1…1)", (lastGates.g + 1) / 2, "var(--series-7)"],
+      ["output o(t)", lastGates.o, "var(--series-2)"]
+    ];
+    rows.forEach(function (row) {
+      var line = document.createElement("div");
+      line.style.display = "flex"; line.style.alignItems = "center"; line.style.gap = "10px"; line.style.marginBottom = "8px";
+      var label = document.createElement("div");
+      label.className = "mono"; label.style.width = "170px"; label.style.fontSize = "12px"; label.style.color = "var(--text-secondary)";
+      label.textContent = row[0];
+      var track = document.createElement("div");
+      track.style.flex = "1"; track.style.height = "10px"; track.style.background = "var(--surface-2)"; track.style.borderRadius = "6px"; track.style.overflow = "hidden";
+      var fill = document.createElement("div");
+      fill.style.height = "100%"; fill.style.width = Math.round(row[1] * 100) + "%"; fill.style.background = row[2];
+      track.appendChild(fill);
+      var val = document.createElement("div");
+      val.className = "mono"; val.style.width = "40px"; val.style.fontSize = "12px"; val.style.color = "var(--text-primary)";
+      val.textContent = row[1].toFixed(2);
+      line.appendChild(label); line.appendChild(track); line.appendChild(val);
+      wrap.appendChild(line);
+    });
+    var info = document.createElement("div");
+    info.className = "muted";
+    info.style.marginTop = "6px";
+    info.textContent = "x(" + t + ") = " + lastGates.x.toFixed(2) + "   c(" + t + ") = " + c.toFixed(2) + "   h(" + t + ") = " + h.toFixed(2);
+    wrap.appendChild(info);
+  }
+
+  function render() { renderChart(); renderGates(); }
+
+  var playing = false, timer = null;
+  document.getElementById("stepBtn").addEventListener("click", function () { stepOnce(); render(); });
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    t = -1; c = 0; h = 0; history = []; lastGates = null; render();
+  });
+  document.getElementById("playBtn").addEventListener("click", function (e) {
+    playing = !playing;
+    e.target.textContent = playing ? "⏸ Pause" : "▶ Play";
+    if (playing) timer = setInterval(function () { stepOnce(); render(); }, 500);
+    else clearInterval(timer);
+  });
+
+  renderChart(); renderGates();
+})();
+</script>
+</body>
+</html>

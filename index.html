@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <a class="brand" href="index.html"><strong>ML Algorithms, Visualized</strong><span>14 pages · GitHub Pages</span></a>
+  <nav><a class="back" href="https://github.com/Por-creater/Supervised-Learning" target="_blank" rel="noopener">View source &#8599;</a></nav>
+</header>
+
+<div class="hero">
+  <p class="tag">14 interactive one-page visualizations</p>
+  <h1>Machine Learning Algorithms, Visualized</h1>
+  <p class="lede">Each algorithm gets its own page with a short explanation and a live,
+  interactive diagram — drag points, step through iterations, and watch the
+  algorithm work. Built with plain HTML, CSS and SVG/Canvas — no frameworks,
+  no build step, deployed straight from this repo with GitHub Pages.</p>
+</div>
+
+<main>
+
+  <div class="section-title">Supervised Learning</div>
+  <div class="grid-cards">
+    <a class="card" href="linear-regression.html">
+      <span class="idx">01</span>
+      <span class="name">Linear Regression</span>
+      <span class="desc">Fit a line through points by minimizing squared error. Drag points, watch the fit and residuals update.</span>
+    </a>
+    <a class="card" href="logistic-regression.html">
+      <span class="idx">02</span>
+      <span class="name">Logistic Regression</span>
+      <span class="desc">Squash a linear score through a sigmoid to output class probability. Move the decision threshold.</span>
+    </a>
+    <a class="card" href="knn.html">
+      <span class="idx">03</span>
+      <span class="name">k-Nearest Neighbors</span>
+      <span class="desc">Classify a new point by majority vote among its k closest labeled neighbors.</span>
+    </a>
+    <a class="card" href="decision-tree.html">
+      <span class="idx">04</span>
+      <span class="name">Decision Tree</span>
+      <span class="desc">Recursively split the feature space on the axis and threshold that separates classes best.</span>
+    </a>
+    <a class="card" href="random-forest.html">
+      <span class="idx">05</span>
+      <span class="name">Random Forest</span>
+      <span class="desc">An ensemble of trees, each trained on a bootstrap sample, voting together on the final label.</span>
+    </a>
+    <a class="card" href="svm.html">
+      <span class="idx">06</span>
+      <span class="name">Support Vector Machine</span>
+      <span class="desc">Find the hyperplane with the widest margin between classes, anchored on the support vectors.</span>
+    </a>
+    <a class="card" href="kmeans.html">
+      <span class="idx">07</span>
+      <span class="name">K-Means</span>
+      <span class="desc">Alternate between assigning points to the nearest centroid and moving centroids to the mean.</span>
+    </a>
+    <a class="card" href="mlp.html">
+      <span class="idx">08</span>
+      <span class="name">MLP (Neural Network)</span>
+      <span class="desc">Layers of weighted connections and nonlinear activations passing a signal forward.</span>
+    </a>
+    <a class="card" href="xgboost.html">
+      <span class="idx">13</span>
+      <span class="name">XGBoost</span>
+      <span class="desc">Gradient boosting: each new shallow tree is fit to correct the residual errors of the ones before it.</span>
+    </a>
+    <a class="card" href="stacking.html">
+      <span class="idx">14</span>
+      <span class="name">Stacking</span>
+      <span class="desc">Several base models' predictions become input features for a meta-model that blends them.</span>
+    </a>
+  </div>
+
+  <div class="section-title">Unsupervised Learning / Deep Learning</div>
+  <div class="grid-cards">
+    <a class="card" href="cnn.html">
+      <span class="idx">09</span>
+      <span class="name">CNN</span>
+      <span class="desc">A small kernel slides across the image, computing a weighted sum at every position to build a feature map.</span>
+    </a>
+    <a class="card" href="lstm.html">
+      <span class="idx">10</span>
+      <span class="name">LSTM</span>
+      <span class="desc">Gated memory cell that learns what to forget, what to write, and what to output at each time step.</span>
+    </a>
+    <a class="card" href="transformer.html">
+      <span class="idx">11</span>
+      <span class="name">Transformer</span>
+      <span class="desc">Self-attention lets every token weigh every other token when building its representation.</span>
+    </a>
+  </div>
+
+  <div class="section-title">Reinforcement Learning</div>
+  <div class="grid-cards">
+    <a class="card" href="reinforcement-learning.html">
+      <span class="idx">12</span>
+      <span class="name">Reinforcement Learning</span>
+      <span class="desc">An agent explores a grid world, updating a Q-table from rewards until a policy emerges.</span>
+    </a>
+  </div>
+
+</main>
+
+<script src="assets/main.js"></script>
+</body>
+</html>

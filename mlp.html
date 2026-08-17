@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MLP (Neural Network) | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag supervised">08 · Supervised Learning · Neural Network</p>
+  <h1>MLP — Multilayer Perceptron</h1>
+  <p class="lede">Every connection carries a learned weight; every node sums its
+  weighted inputs, adds a bias, and passes the result through a nonlinear
+  activation function. Stacking these layers lets the network build increasingly
+  abstract combinations of the raw input features.</p>
+
+  <div class="viz-wrap">
+    <svg id="net" viewBox="0 0 640 340" width="640" height="340"></svg>
+    <div class="controls">
+      <button class="btn primary" id="runBtn">Run forward pass ▸</button>
+      <button class="btn" id="newInputBtn">New random input</button>
+      <button class="btn" id="rewireBtn">Re-randomize weights</button>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>positive weight / active node</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>negative weight</span>
+      <span class="item">edge thickness = |weight|, node fill = activation strength</span>
+    </div>
+  </div>
+
+  <h2>Reading the diagram</h2>
+  <p>Input nodes (left) hold raw feature values. Each hidden node computes
+  <code>ReLU(Σ wᵢxᵢ + b)</code> — negative sums get clipped to zero, which is why some
+  hidden nodes stay dark even with a fully-connected layer before them. The output
+  layer uses a sigmoid so its two nodes read as class probabilities.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(77);
+  var W = 640, H = 340;
+  var svg = document.getElementById("net");
+  var layerSizes = [4, 6, 6, 2];
+  var layerNames = ["input", "hidden 1", "hidden 2", "output"];
+
+  var weights = [], biases = [], activations = [];
+
+  function randomWeights() {
+    weights = [];
+    biases = [];
+    for (var l = 1; l < layerSizes.length; l++) {
+      var wMat = [];
+      for (var j = 0; j < layerSizes[l]; j++) {
+        var row = [];
+        for (var i = 0; i < layerSizes[l - 1]; i++) row.push((rand() * 2 - 1) * 1.3);
+        wMat.push(row);
+      }
+      weights.push(wMat);
+      var b = [];
+      for (var k = 0; k < layerSizes[l]; k++) b.push((rand() * 2 - 1) * 0.4);
+      biases.push(b);
+    }
+  }
+
+  function randomInput() {
+    activations = [];
+    var input = [];
+    for (var i = 0; i < layerSizes[0]; i++) input.push(rand());
+    activations.push(input);
+    for (var l = 1; l < layerSizes.length; l++) activations.push(layerSizes[l].fill ? [] : new Array(layerSizes[l]).fill(0));
+  }
+
+  function relu(x) { return Math.max(0, x); }
+  function sigmoid(x) { return 1 / (1 + Math.exp(-x)); }
+
+  function forwardLayer(l) {
+    var prev = activations[l - 1];
+    var out = [];
+    for (var j = 0; j < layerSizes[l]; j++) {
+      var sum = biases[l - 1][j];
+      for (var i = 0; i < prev.length; i++) sum += weights[l - 1][j][i] * prev[i];
+      out.push(l === layerSizes.length - 1 ? sigmoid(sum) : relu(sum));
+    }
+    activations[l] = out;
+  }
+
+  function nodePos(l, idx) {
+    var colX = 60 + l * ((W - 120) / (layerSizes.length - 1));
+    var n = layerSizes[l];
+    var gap = (H - 60) / (n + 1);
+    var rowY = 30 + gap * (idx + 1);
+    return { x: colX, y: rowY };
+  }
+
+  function render(highlightLayer) {
+    svg.innerHTML = "";
+    // edges
+    for (var l = 1; l < layerSizes.length; l++) {
+      for (var j = 0; j < layerSizes[l]; j++) {
+        for (var i = 0; i < layerSizes[l - 1]; i++) {
+          var w = weights[l - 1][j][i];
+          var p0 = nodePos(l - 1, i), p1 = nodePos(l, j);
+          var isActive = highlightLayer !== undefined && l <= highlightLayer;
+          svg.appendChild(MLViz.svgEl("line", {
+            x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y,
+            stroke: w >= 0 ? "var(--series-1)" : "var(--series-2)",
+            "stroke-width": Math.max(0.4, Math.min(3.2, Math.abs(w) * 2)),
+            opacity: isActive ? Math.min(0.85, Math.abs(w) * 0.5 + 0.25) : Math.min(0.32, Math.abs(w) * 0.25 + 0.08)
+          }));
+        }
+      }
+    }
+    // nodes
+    for (var l2 = 0; l2 < layerSizes.length; l2++) {
+      for (var idx = 0; idx < layerSizes[l2]; idx++) {
+        var pos = nodePos(l2, idx);
+        var act = activations[l2] && activations[l2][idx] !== undefined ? activations[l2][idx] : null;
+        var shown = highlightLayer !== undefined && l2 <= highlightLayer;
+        var fillOpacity = shown && act !== null ? Math.max(0.12, Math.min(1, act)) : 0.12;
+        svg.appendChild(MLViz.svgEl("circle", {
+          cx: pos.x, cy: pos.y, r: 12,
+          fill: "var(--series-1)", "fill-opacity": fillOpacity,
+          stroke: "var(--text-secondary)", "stroke-width": 1.2
+        }));
+      }
+      var labelPos = nodePos(l2, layerSizes[l2] - 1);
+      var t = MLViz.svgEl("text", { x: nodePos(l2, 0).x, y: 20, "text-anchor": "middle", "font-size": 11, fill: "var(--text-muted)" });
+      t.textContent = layerNames[l2];
+      svg.appendChild(t);
+    }
+  }
+
+  function runForwardPass() {
+    var runBtn = document.getElementById("runBtn");
+    runBtn.disabled = true;
+    var l = 0;
+    render(0);
+    var timer = setInterval(function () {
+      l++;
+      if (l < layerSizes.length) forwardLayer(l);
+      render(l);
+      if (l >= layerSizes.length - 1) { clearInterval(timer); runBtn.disabled = false; }
+    }, 550);
+  }
+
+  document.getElementById("runBtn").addEventListener("click", runForwardPass);
+  document.getElementById("newInputBtn").addEventListener("click", function () { randomInput(); render(); });
+  document.getElementById("rewireBtn").addEventListener("click", function () { randomWeights(); render(); });
+
+  randomWeights();
+  randomInput();
+  render();
+})();
+</script>
+</body>
+</html>

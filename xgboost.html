@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XGBoost | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag ensemble">13 · Bonus · Gradient Boosting</p>
+  <h1>XGBoost — Gradient Boosting</h1>
+  <p class="lede">Boosting builds an ensemble one small model at a time. Round 1
+  starts from a flat guess (the mean); every later round trains a shallow tree
+  ("stump") to predict the <strong>residual error</strong> the ensemble still has, then
+  adds a shrunk copy of that stump's prediction to the running total. Errors get
+  chipped away round by round instead of all at once.</p>
+
+  <div class="viz-wrap">
+    <svg id="chart" viewBox="0 0 640 320" width="640" height="320"></svg>
+    <div class="controls">
+      <button class="btn primary" id="stepBtn">Add round ▸</button>
+      <button class="btn" id="playBtn">▶ Run 10 rounds</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="statRound">0</div><div class="lbl">round</div></div>
+      <div class="stat"><div class="num" id="statMSE">–</div><div class="lbl">mean squared error</div></div>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>true value</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>ensemble prediction</span>
+    </div>
+  </div>
+
+  <div class="viz-wrap">
+    <div class="muted" style="margin-bottom:8px;">error shrinking round over round</div>
+    <svg id="mseBars" viewBox="0 0 640 100" width="640" height="100"></svg>
+  </div>
+
+  <p class="muted">Each stump only needs to explain what's left over — a much easier
+  job than fitting the whole function at once. The learning rate (shrinkage, here
+  0.4) keeps any single round from overcorrecting.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(31);
+  var LR = 0.4;
+  var data = [];
+  function target(x) { return x < 3.5 ? 2 : (x < 7 ? 6.5 : 3.5) + Math.sin(x) * 0.6; }
+  for (var i = 0; i < 24; i++) {
+    var x = rand() * 10;
+    data.push({ x: x, y: target(x) + MLViz.gaussian(rand) * 0.35 });
+  }
+  data.sort(function (a, b) { return a.x - b.x; });
+
+  var meanY = data.reduce(function (s, p) { return s + p.y; }, 0) / data.length;
+  var pred = data.map(function () { return meanY; });
+  var rounds = [];
+  var mseHistory = [];
+
+  function mse() {
+    var s = 0;
+    for (var i = 0; i < data.length; i++) s += (data[i].y - pred[i]) * (data[i].y - pred[i]);
+    return s / data.length;
+  }
+  mseHistory.push(mse());
+
+  function fitStump(residuals) {
+    var best = null;
+    var xs = data.map(function (p) { return p.x; });
+    var sorted = xs.slice().sort(function (a, b) { return a - b; });
+    for (var i = 1; i < sorted.length; i++) {
+      var t = (sorted[i - 1] + sorted[i]) / 2;
+      var leftIdx = [], rightIdx = [];
+      data.forEach(function (p, idx) { (p.x <= t ? leftIdx : rightIdx).push(idx); });
+      if (!leftIdx.length || !rightIdx.length) continue;
+      var lv = leftIdx.reduce(function (s, idx) { return s + residuals[idx]; }, 0) / leftIdx.length;
+      var rv = rightIdx.reduce(function (s, idx) { return s + residuals[idx]; }, 0) / rightIdx.length;
+      var sse = 0;
+      leftIdx.forEach(function (idx) { sse += (residuals[idx] - lv) * (residuals[idx] - lv); });
+      rightIdx.forEach(function (idx) { sse += (residuals[idx] - rv) * (residuals[idx] - rv); });
+      if (!best || sse < best.sse) best = { t: t, lv: lv, rv: rv, sse: sse };
+    }
+    return best;
+  }
+
+  function addRound() {
+    if (rounds.length >= 12) return;
+    var residuals = data.map(function (p, i) { return p.y - pred[i]; });
+    var stump = fitStump(residuals);
+    if (!stump) return;
+    data.forEach(function (p, i) {
+      var contribution = (p.x <= stump.t ? stump.lv : stump.rv) * LR;
+      pred[i] += contribution;
+    });
+    rounds.push(stump);
+    mseHistory.push(mse());
+  }
+
+  var svg = document.getElementById("chart");
+  var W = 640, H = 320, PAD = 34;
+  var yDomain = [0, 9];
+  function sx(x) { return PAD + x / 10 * (W - PAD * 2); }
+  function sy(y) { return H - PAD - (y - yDomain[0]) / (yDomain[1] - yDomain[0]) * (H - PAD * 2); }
+
+  function render() {
+    svg.innerHTML = "";
+    for (var g = 0; g <= 10; g += 2) svg.appendChild(MLViz.svgEl("line", { x1: sx(g), y1: sy(yDomain[0]), x2: sx(g), y2: sy(yDomain[1]), stroke: "var(--grid)", "stroke-width": 1 }));
+    svg.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(yDomain[0]), x2: sx(10), y2: sy(yDomain[0]), stroke: "var(--baseline)", "stroke-width": 1.4 }));
+
+    var d = "";
+    data.forEach(function (p, i) { d += (i === 0 ? "M" : "L") + sx(p.x) + "," + sy(pred[i]) + " "; });
+    svg.appendChild(MLViz.svgEl("path", { d: d, fill: "none", stroke: "var(--series-2)", "stroke-width": 2.4 }));
+
+    data.forEach(function (p, i) {
+      svg.appendChild(MLViz.svgEl("circle", { cx: sx(p.x), cy: sy(p.y), r: 5, fill: "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": 1.2 }));
+      svg.appendChild(MLViz.svgEl("circle", { cx: sx(p.x), cy: sy(pred[i]), r: 3.5, fill: "var(--series-2)" }));
+    });
+
+    document.getElementById("statRound").textContent = rounds.length;
+    document.getElementById("statMSE").textContent = mse().toFixed(3);
+    renderBars();
+  }
+
+  var barsSvg = document.getElementById("mseBars");
+  function renderBars() {
+    barsSvg.innerHTML = "";
+    var bw = (640 - 40) / 13, maxMse = mseHistory[0] || 1;
+    mseHistory.forEach(function (m, i) {
+      var h = (m / maxMse) * 70;
+      barsSvg.appendChild(MLViz.svgEl("rect", {
+        x: 30 + i * bw, y: 90 - h, width: bw - 6, height: h,
+        fill: i === mseHistory.length - 1 ? "var(--series-2)" : "var(--series-1)", opacity: i === mseHistory.length - 1 ? 1 : 0.55
+      }));
+    });
+    barsSvg.appendChild(MLViz.svgEl("line", { x1: 28, y1: 90, x2: 620, y2: 90, stroke: "var(--baseline)", "stroke-width": 1 }));
+  }
+
+  document.getElementById("stepBtn").addEventListener("click", function () { addRound(); render(); });
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    pred = data.map(function () { return meanY; }); rounds = []; mseHistory = [mse()]; render();
+  });
+  document.getElementById("playBtn").addEventListener("click", function () {
+    var count = 0;
+    var timer = setInterval(function () {
+      addRound(); render(); count++;
+      if (count >= 10 || rounds.length >= 12) clearInterval(timer);
+    }, 220);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

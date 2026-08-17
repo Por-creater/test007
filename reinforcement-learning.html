@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reinforcement Learning | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag rl">12 · Reinforcement Learning</p>
+  <h1>Reinforcement Learning — Q-Learning in a Grid World</h1>
+  <p class="lede">There's no labeled dataset here — an agent takes actions, receives a
+  reward, and slowly learns a <strong>Q-table</strong>: an estimate of "how good is this
+  action from this state" for every state-action pair. It explores randomly at first
+  (epsilon-greedy) and leans more on its own estimates as they improve.</p>
+
+  <div class="viz-wrap">
+    <svg id="grid" viewBox="0 0 340 340" width="340" height="340"></svg>
+    <div class="controls">
+      <button class="btn primary" id="stepBtn">Step ▸</button>
+      <button class="btn" id="playBtn">▶ Train (fast)</button>
+      <button class="btn" id="resetBtn">Reset Q-table</button>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="statEp">0</div><div class="lbl">episode</div></div>
+      <div class="stat"><div class="num" id="statSteps">0</div><div class="lbl">total steps</div></div>
+      <div class="stat"><div class="num" id="statEps">1.00</div><div class="lbl">exploration ε</div></div>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-3)"></span>goal (+10)</span>
+      <span class="item"><span class="swatch" style="background:var(--series-8)"></span>pit (−10)</span>
+      <span class="item"><span class="swatch" style="background:var(--series-7)"></span>agent</span>
+      <span class="item">arrow = current best action (argmax Q) in each cell</span>
+    </div>
+  </div>
+
+  <p class="muted">Every move costs −0.1 (to encourage short paths). Click "Train
+  (fast)" and watch the arrows organize themselves into a policy that flows around
+  the pit and toward the goal — that's the Q-table converging.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(123);
+  var SIZE = 5;
+  var GOAL = { r: 0, c: 4 };
+  var PIT = { r: 2, c: 2 };
+  var WALLS = [{ r: 1, c: 1 }, { r: 3, c: 3 }];
+  var START = { r: 4, c: 0 };
+
+  function key(r, c) { return r + "," + c; }
+  function isWall(r, c) { return WALLS.some(function (w) { return w.r === r && w.c === c; }); }
+  function inBounds(r, c) { return r >= 0 && r < SIZE && c >= 0 && c < SIZE; }
+
+  var actions = [[-1, 0], [1, 0], [0, -1], [0, 1]]; // up, down, left, right
+  var actionArrow = ["↑", "↓", "←", "→"];
+
+  var Q = {};
+  function qGet(r, c, a) { return (Q[key(r, c)] || [0, 0, 0, 0])[a]; }
+  function qRow(r, c) { return Q[key(r, c)] || [0, 0, 0, 0]; }
+  function qSet(r, c, a, v) {
+    if (!Q[key(r, c)]) Q[key(r, c)] = [0, 0, 0, 0];
+    Q[key(r, c)][a] = v;
+  }
+
+  var agent = { r: START.r, c: START.c };
+  var episode = 0, totalSteps = 0, epsilon = 1.0;
+  var alpha = 0.35, gamma = 0.9;
+
+  function reward(r, c) {
+    if (r === GOAL.r && c === GOAL.c) return 10;
+    if (r === PIT.r && c === PIT.c) return -10;
+    return -0.1;
+  }
+  function isTerminal(r, c) { return (r === GOAL.r && c === GOAL.c) || (r === PIT.r && c === PIT.c); }
+
+  function chooseAction(r, c) {
+    if (rand() < epsilon) return Math.floor(rand() * 4);
+    var qs = qRow(r, c);
+    var best = 0;
+    for (var a = 1; a < 4; a++) if (qs[a] > qs[best]) best = a;
+    return best;
+  }
+
+  function stepOnce() {
+    var a = chooseAction(agent.r, agent.c);
+    var nr = agent.r + actions[a][0], nc = agent.c + actions[a][1];
+    if (!inBounds(nr, nc) || isWall(nr, nc)) { nr = agent.r; nc = agent.c; }
+    var rw = reward(nr, nc);
+    var qsNext = qRow(nr, nc);
+    var maxNext = Math.max.apply(null, qsNext);
+    var old = qGet(agent.r, agent.c, a);
+    qSet(agent.r, agent.c, a, old + alpha * (rw + gamma * maxNext - old));
+
+    agent.r = nr; agent.c = nc;
+    totalSteps++;
+
+    if (isTerminal(agent.r, agent.c)) {
+      episode++;
+      epsilon = Math.max(0.05, epsilon * 0.96);
+      agent.r = START.r; agent.c = START.c;
+    }
+  }
+
+  var svg = document.getElementById("grid");
+  var cs = 64, pad = 6;
+  function cx(c) { return pad + c * cs; }
+  function cy(r) { return pad + r * cs; }
+
+  function render() {
+    svg.innerHTML = "";
+    for (var r = 0; r < SIZE; r++) {
+      for (var c = 0; c < SIZE; c++) {
+        var fill = "var(--surface-2)";
+        if (r === GOAL.r && c === GOAL.c) fill = "color-mix(in srgb, var(--series-3) 35%, var(--surface-2))";
+        else if (r === PIT.r && c === PIT.c) fill = "color-mix(in srgb, var(--series-8) 35%, var(--surface-2))";
+        else if (isWall(r, c)) fill = "var(--baseline)";
+        svg.appendChild(MLViz.svgEl("rect", { x: cx(c), y: cy(r), width: cs - 3, height: cs - 3, rx: 6, fill: fill, stroke: "var(--border)" }));
+
+        if (!isWall(r, c) && !isTerminal(r, c)) {
+          var qs = qRow(r, c);
+          var maxQ = Math.max.apply(null, qs);
+          if (maxQ !== 0) {
+            var best = 0;
+            for (var a = 1; a < 4; a++) if (qs[a] > qs[best]) best = a;
+            var t = MLViz.svgEl("text", {
+              x: cx(c) + (cs - 3) / 2, y: cy(r) + (cs - 3) / 2 + 8, "text-anchor": "middle",
+              "font-size": 22, fill: "var(--text-secondary)", opacity: Math.min(1, 0.35 + Math.abs(maxQ) / 10)
+            });
+            t.textContent = actionArrow[best];
+            svg.appendChild(t);
+          }
+        }
+        if (r === GOAL.r && c === GOAL.c) {
+          var gt = MLViz.svgEl("text", { x: cx(c) + (cs - 3) / 2, y: cy(r) + (cs - 3) / 2 + 7, "text-anchor": "middle", "font-size": 20, fill: "var(--series-3)" });
+          gt.textContent = "★"; svg.appendChild(gt);
+        }
+        if (r === PIT.r && c === PIT.c) {
+          var pt = MLViz.svgEl("text", { x: cx(c) + (cs - 3) / 2, y: cy(r) + (cs - 3) / 2 + 7, "text-anchor": "middle", "font-size": 20, fill: "var(--series-8)" });
+          pt.textContent = "✕"; svg.appendChild(pt);
+        }
+      }
+    }
+    svg.appendChild(MLViz.svgEl("circle", { cx: cx(agent.c) + (cs - 3) / 2, cy: cy(agent.r) + (cs - 3) / 2, r: 13, fill: "var(--series-7)", stroke: "#fff", "stroke-width": 2 }));
+
+    document.getElementById("statEp").textContent = episode;
+    document.getElementById("statSteps").textContent = totalSteps;
+    document.getElementById("statEps").textContent = epsilon.toFixed(2);
+  }
+
+  var playing = false, timer = null;
+  document.getElementById("stepBtn").addEventListener("click", function () { stepOnce(); render(); });
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    Q = {}; episode = 0; totalSteps = 0; epsilon = 1.0;
+    agent.r = START.r; agent.c = START.c; render();
+  });
+  document.getElementById("playBtn").addEventListener("click", function (e) {
+    playing = !playing;
+    e.target.textContent = playing ? "⏸ Pause" : "▶ Train (fast)";
+    if (playing) {
+      timer = setInterval(function () {
+        for (var i = 0; i < 8; i++) stepOnce();
+        render();
+      }, 60);
+    } else clearInterval(timer);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

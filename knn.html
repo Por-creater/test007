@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>k-Nearest Neighbors | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag supervised">03 · Supervised Learning · Classification</p>
+  <h1>k-Nearest Neighbors (kNN)</h1>
+  <p class="lede">kNN has no training phase — it just remembers every labeled point. To
+  classify a new point, it finds the <code>k</code> closest labeled points by distance
+  and lets them vote by majority. Small k follows local noise; large k smooths the
+  boundary but can blur real structure.</p>
+
+  <div class="viz-wrap">
+    <svg id="chart" viewBox="0 0 640 400" width="640" height="400"></svg>
+    <div class="controls">
+      <div class="control">
+        <label for="k">k</label>
+        <input type="range" id="k" min="1" max="11" step="2" value="3">
+        <output id="kVal">3</output>
+      </div>
+      <button class="btn" id="resetBtn">New random points</button>
+      <span class="muted">click anywhere on the chart to place a query point</span>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="statPred">–</div><div class="lbl">predicted class</div></div>
+      <div class="stat"><div class="num" id="statVote">–</div><div class="lbl">vote split</div></div>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>class A</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>class B</span>
+      <span class="item"><span class="swatch" style="background:var(--series-7)"></span>query point</span>
+    </div>
+  </div>
+
+  <h2>Distance-based, not model-based</h2>
+  <p>Because kNN stores the whole dataset and computes distances at prediction time,
+  it can represent arbitrarily complex boundaries — but prediction gets slower as the
+  dataset grows, and it's sensitive to the scale of each feature (always normalize
+  features before using kNN in practice).</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(21);
+  var W = 640, H = 400, PAD = 30;
+  var svg = document.getElementById("chart");
+
+  var points = [];
+  function makePoints() {
+    points = [];
+    for (var i = 0; i < 22; i++) {
+      var cA = MLViz.gaussian, cx = 200 + cA(rand) * 90, cy = 150 + cA(rand) * 80;
+      points.push({ x: cx, y: cy, cls: 0 });
+    }
+    for (var j = 0; j < 22; j++) {
+      var cx2 = 430 + MLViz.gaussian(rand) * 90, cy2 = 260 + MLViz.gaussian(rand) * 80;
+      points.push({ x: cx2, y: cy2, cls: 1 });
+    }
+    points.forEach(function (p) {
+      p.x = Math.max(PAD + 10, Math.min(W - PAD - 10, p.x));
+      p.y = Math.max(PAD + 10, Math.min(H - PAD - 10, p.y));
+    });
+  }
+
+  var query = { x: W / 2, y: H / 2 };
+  var k = 3;
+
+  function classify() {
+    var withDist = points.map(function (p) {
+      return { p: p, d: Math.hypot(p.x - query.x, p.y - query.y) };
+    }).sort(function (a, b) { return a.d - b.d; });
+    var neighbors = withDist.slice(0, k);
+    var votes = { 0: 0, 1: 0 };
+    neighbors.forEach(function (n) { votes[n.p.cls]++; });
+    var pred = votes[0] >= votes[1] ? 0 : 1;
+    return { neighbors: neighbors, votes: votes, pred: pred };
+  }
+
+  function render() {
+    svg.innerHTML = "";
+    var border = MLViz.svgEl("rect", { x: 1, y: 1, width: W - 2, height: H - 2, fill: "none", stroke: "var(--grid)" });
+    svg.appendChild(border);
+
+    var result = classify();
+
+    result.neighbors.forEach(function (n) {
+      svg.appendChild(MLViz.svgEl("line", {
+        x1: query.x, y1: query.y, x2: n.p.x, y2: n.p.y,
+        stroke: "var(--series-7)", "stroke-width": 1.4, opacity: 0.55
+      }));
+    });
+
+    points.forEach(function (p) {
+      var isNeighbor = result.neighbors.indexOf(result.neighbors.filter(function (n) { return n.p === p; })[0]) >= 0 &&
+        result.neighbors.some(function (n) { return n.p === p; });
+      var c = MLViz.svgEl("circle", {
+        cx: p.x, cy: p.y, r: isNeighbor ? 7.5 : 6,
+        fill: p.cls === 0 ? "var(--series-1)" : "var(--series-2)",
+        stroke: isNeighbor ? "var(--series-7)" : "var(--surface-1)",
+        "stroke-width": isNeighbor ? 2.5 : 1.5
+      });
+      svg.appendChild(c);
+    });
+
+    var qColor = result.pred === 0 ? "var(--series-1)" : "var(--series-2)";
+    svg.appendChild(MLViz.svgEl("circle", { cx: query.x, cy: query.y, r: 13, fill: "none", stroke: "var(--series-7)", "stroke-width": 2.5 }));
+    svg.appendChild(MLViz.svgEl("circle", { cx: query.x, cy: query.y, r: 6.5, fill: qColor, stroke: "#fff", "stroke-width": 2 }));
+
+    document.getElementById("statPred").textContent = result.pred === 0 ? "Class A" : "Class B";
+    document.getElementById("statVote").textContent = result.votes[0] + " – " + result.votes[1];
+  }
+
+  function svgPoint(evt) {
+    var pt = svg.createSVGPoint();
+    var t = evt.touches ? evt.touches[0] : evt;
+    pt.x = t.clientX; pt.y = t.clientY;
+    return pt.matrixTransform(svg.getScreenCTM().inverse());
+  }
+
+  svg.addEventListener("click", function (evt) {
+    var loc = svgPoint(evt);
+    query.x = Math.max(PAD, Math.min(W - PAD, loc.x));
+    query.y = Math.max(PAD, Math.min(H - PAD, loc.y));
+    render();
+  });
+
+  document.getElementById("k").addEventListener("input", function (e) {
+    k = parseInt(e.target.value, 10);
+    document.getElementById("kVal").textContent = k;
+    render();
+  });
+  document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); render(); });
+
+  makePoints();
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Decision Tree | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag supervised">04 · Supervised Learning · Classification</p>
+  <h1>Decision Tree</h1>
+  <p class="lede">A decision tree repeatedly asks "is feature ≤ threshold?" It picks,
+  at every node, the single axis-aligned split that best separates the remaining
+  classes (lowest Gini impurity), then recurses on each side until nodes are pure,
+  too small, or a depth limit is hit.</p>
+
+  <div class="viz-wrap">
+    <svg id="scatter" viewBox="0 0 640 340" width="640" height="340"></svg>
+    <div class="controls">
+      <div class="control">
+        <label for="depth">max depth</label>
+        <input type="range" id="depth" min="1" max="5" step="1" value="3">
+        <output id="depthVal">3</output>
+      </div>
+      <button class="btn" id="resetBtn">New random points</button>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>class A region / point</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>class B region / point</span>
+      <span class="item"><span class="swatch" style="background:var(--series-8)"></span>split boundary</span>
+    </div>
+  </div>
+
+  <h2>The tree that produced these splits</h2>
+  <div class="viz-wrap">
+    <svg id="tree" viewBox="0 0 640 260" width="640" height="260"></svg>
+  </div>
+
+  <p class="muted">Raise "max depth" to let the tree carve the space into smaller and
+  smaller boxes — each new split is the single best axis + threshold found by
+  scanning every candidate at that node, so deeper trees fit the training points
+  more tightly (and are more prone to overfitting).</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(33);
+  var W = 640, H = 340, PAD = 30;
+  var DOMAIN = 10;
+  var scatterSvg = document.getElementById("scatter");
+  var treeSvg = document.getElementById("tree");
+
+  function sx(x) { return PAD + x / DOMAIN * (W - PAD * 2); }
+  function sy(y) { return H - PAD - y / DOMAIN * (H - PAD * 2); }
+
+  var points = [];
+  function makePoints() {
+    points = [];
+    // Structured pattern (two rectangular clusters + a diagonal band) so splits look meaningful.
+    for (var i = 0; i < 26; i++) {
+      var x = rand() * DOMAIN, y = rand() * DOMAIN;
+      var cls = (x < 5 && y < 5.5) || (x >= 5.5 && y >= 5) ? 0 : 1;
+      if (rand() < 0.08) cls = 1 - cls; // small label noise
+      points.push({ x: x, y: y, cls: cls });
+    }
+  }
+
+  function gini(pts) {
+    if (pts.length === 0) return 0;
+    var c0 = pts.filter(function (p) { return p.cls === 0; }).length;
+    var p0 = c0 / pts.length, p1 = 1 - p0;
+    return 1 - p0 * p0 - p1 * p1;
+  }
+
+  function bestSplit(pts) {
+    var best = null;
+    ["x", "y"].forEach(function (axis) {
+      var vals = pts.map(function (p) { return p[axis]; }).sort(function (a, b) { return a - b; });
+      for (var i = 1; i < vals.length; i++) {
+        var t = (vals[i - 1] + vals[i]) / 2;
+        var left = pts.filter(function (p) { return p[axis] <= t; });
+        var right = pts.filter(function (p) { return p[axis] > t; });
+        if (left.length === 0 || right.length === 0) continue;
+        var impurity = (left.length * gini(left) + right.length * gini(right)) / pts.length;
+        if (!best || impurity < best.impurity) best = { axis: axis, t: t, impurity: impurity, left: left, right: right };
+      }
+    });
+    return best;
+  }
+
+  function majority(pts) {
+    var c0 = pts.filter(function (p) { return p.cls === 0; }).length;
+    return c0 >= pts.length - c0 ? 0 : 1;
+  }
+
+  function buildTree(pts, box, depth, maxDepth) {
+    var g = gini(pts);
+    if (depth >= maxDepth || g === 0 || pts.length < 4) {
+      return { leaf: true, cls: majority(pts), n: pts.length, box: box };
+    }
+    var split = bestSplit(pts);
+    if (!split) return { leaf: true, cls: majority(pts), n: pts.length, box: box };
+    var leftBox = Object.assign({}, box), rightBox = Object.assign({}, box);
+    if (split.axis === "x") { leftBox.xmax = split.t; rightBox.xmin = split.t; }
+    else { leftBox.ymax = split.t; rightBox.ymin = split.t; }
+    return {
+      leaf: false, axis: split.axis, t: split.t, box: box, n: pts.length,
+      left: buildTree(split.left, leftBox, depth + 1, maxDepth),
+      right: buildTree(split.right, rightBox, depth + 1, maxDepth)
+    };
+  }
+
+  function collectLeaves(node, out) {
+    if (node.leaf) { out.push(node); return; }
+    collectLeaves(node.left, out); collectLeaves(node.right, out);
+  }
+
+  function renderScatter(tree) {
+    scatterSvg.innerHTML = "";
+    scatterSvg.appendChild(MLViz.svgEl("rect", { x: PAD, y: PAD, width: W - PAD * 2, height: H - PAD * 2, fill: "none", stroke: "var(--grid)" }));
+
+    var leaves = []; collectLeaves(tree, leaves);
+    leaves.forEach(function (leaf) {
+      var x0 = sx(leaf.box.xmin), x1 = sx(leaf.box.xmax);
+      var y0 = sy(leaf.box.ymax), y1 = sy(leaf.box.ymin);
+      scatterSvg.appendChild(MLViz.svgEl("rect", {
+        x: x0, y: y0, width: x1 - x0, height: y1 - y0,
+        fill: leaf.cls === 0 ? "var(--series-1)" : "var(--series-2)", opacity: 0.16
+      }));
+    });
+
+    function drawSplits(node) {
+      if (node.leaf) return;
+      var x0 = sx(node.box.xmin), x1 = sx(node.box.xmax);
+      var y0 = sy(node.box.ymax), y1 = sy(node.box.ymin);
+      if (node.axis === "x") {
+        scatterSvg.appendChild(MLViz.svgEl("line", { x1: sx(node.t), y1: y0, x2: sx(node.t), y2: y1, stroke: "var(--series-8)", "stroke-width": 2 }));
+      } else {
+        scatterSvg.appendChild(MLViz.svgEl("line", { x1: x0, y1: sy(node.t), x2: x1, y2: sy(node.t), stroke: "var(--series-8)", "stroke-width": 2 }));
+      }
+      drawSplits(node.left); drawSplits(node.right);
+    }
+    drawSplits(tree);
+
+    points.forEach(function (p) {
+      scatterSvg.appendChild(MLViz.svgEl("circle", {
+        cx: sx(p.x), cy: sy(p.y), r: 5.5,
+        fill: p.cls === 0 ? "var(--series-1)" : "var(--series-2)",
+        stroke: "var(--surface-1)", "stroke-width": 1.3
+      }));
+    });
+  }
+
+  function renderTree(tree) {
+    treeSvg.innerHTML = "";
+    var leafGap = 70, depthGap = 55, offsetX = 40, offsetY = 30;
+    var leafIndex = 0;
+
+    function layout(node, depth) {
+      node.depth = depth;
+      if (node.leaf) { node.px = leafIndex * leafGap; leafIndex++; return node.px; }
+      var lx = layout(node.left, depth + 1);
+      var rx = layout(node.right, depth + 1);
+      node.px = (lx + rx) / 2;
+      return node.px;
+    }
+    layout(tree, 0);
+
+    var totalW = Math.max(560, leafIndex * leafGap);
+    var totalH = offsetY + (maxDepthOf(tree) + 1) * depthGap + 30;
+    treeSvg.setAttribute("viewBox", "0 0 " + totalW + " " + totalH);
+    treeSvg.setAttribute("height", totalH);
+
+    function px(n) { return offsetX + n.px; }
+    function py(n) { return offsetY + n.depth * depthGap; }
+
+    function drawEdges(node) {
+      if (node.leaf) return;
+      [["left", "≤"], ["right", ">"]].forEach(function (pair) {
+        var child = node[pair[0]];
+        treeSvg.appendChild(MLViz.svgEl("line", {
+          x1: px(node), y1: py(node) + 10, x2: px(child), y2: py(child) - 10,
+          stroke: "var(--baseline)", "stroke-width": 1.5
+        }));
+      });
+      drawEdges(node.left); drawEdges(node.right);
+    }
+    drawEdges(tree);
+
+    function drawNode(node) {
+      var g = MLViz.svgEl("g", {});
+      if (node.leaf) {
+        var color = node.cls === 0 ? "var(--series-1)" : "var(--series-2)";
+        g.appendChild(MLViz.svgEl("rect", { x: px(node) - 26, y: py(node) - 11, width: 52, height: 22, rx: 6, fill: color, opacity: 0.22, stroke: color, "stroke-width": 1.3 }));
+        var t = MLViz.svgEl("text", { x: px(node), y: py(node) + 4, "text-anchor": "middle", "font-size": 10.5, fill: "var(--text-primary)" });
+        t.textContent = (node.cls === 0 ? "A" : "B") + " (" + node.n + ")";
+        g.appendChild(t);
+      } else {
+        g.appendChild(MLViz.svgEl("rect", { x: px(node) - 32, y: py(node) - 11, width: 64, height: 22, rx: 6, fill: "var(--surface-2)", stroke: "var(--border)" }));
+        var t2 = MLViz.svgEl("text", { x: px(node), y: py(node) + 4, "text-anchor": "middle", "font-size": 10, fill: "var(--text-secondary)" });
+        t2.textContent = node.axis + " ≤ " + node.t.toFixed(1);
+        g.appendChild(t2);
+      }
+      treeSvg.appendChild(g);
+      if (!node.leaf) { drawNode(node.left); drawNode(node.right); }
+    }
+    drawNode(tree);
+  }
+
+  function maxDepthOf(node) {
+    if (node.leaf) return node.depth;
+    return Math.max(maxDepthOf(node.left), maxDepthOf(node.right));
+  }
+
+  function rebuild() {
+    var maxDepth = parseInt(document.getElementById("depth").value, 10);
+    var tree = buildTree(points, { xmin: 0, xmax: DOMAIN, ymin: 0, ymax: DOMAIN }, 0, maxDepth);
+    renderScatter(tree);
+    renderTree(tree);
+  }
+
+  document.getElementById("depth").addEventListener("input", function (e) {
+    document.getElementById("depthVal").textContent = e.target.value;
+    rebuild();
+  });
+  document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); rebuild(); });
+
+  makePoints();
+  rebuild();
+})();
+</script>
+</body>
+</html>

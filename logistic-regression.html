@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Logistic Regression | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag supervised">02 · Supervised Learning · Classification</p>
+  <h1>Logistic Regression</h1>
+  <p class="lede">Logistic regression scores each point with a linear function
+  <code>z = wx + b</code>, then squashes that score into a 0–1 probability with the
+  sigmoid function <code>σ(z) = 1 / (1 + e⁻ᶻ)</code>. A point is classified positive
+  when its predicted probability crosses a decision threshold — usually 0.5.</p>
+
+  <div class="viz-wrap">
+    <svg id="chart" viewBox="0 0 640 340" width="640" height="340"></svg>
+    <div class="controls">
+      <div class="control">
+        <label for="thresh">decision threshold</label>
+        <input type="range" id="thresh" min="0.05" max="0.95" step="0.01" value="0.5">
+        <output id="threshVal">0.50</output>
+      </div>
+      <button class="btn" id="resetBtn">New random points</button>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="statAcc">–</div><div class="lbl">accuracy</div></div>
+      <div class="stat"><div class="num" id="statW">–</div><div class="lbl">weight w</div></div>
+      <div class="stat"><div class="num" id="statB">–</div><div class="lbl">bias b</div></div>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>true class 0</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>true class 1</span>
+      <span class="item"><span class="swatch" style="background:var(--series-4)"></span>sigmoid curve σ(z)</span>
+      <span class="item"><span class="swatch" style="background:var(--series-8)"></span>decision boundary</span>
+    </div>
+  </div>
+
+  <p class="muted">Drag the threshold: points get reclassified live, and the dashed
+  boundary line — where σ(wx+b) crosses the threshold — slides along the x-axis.
+  Misclassified points (predicted class ≠ true class) get a red ring.</p>
+
+  <h2>Why sigmoid, not a straight line</h2>
+  <p>A plain linear model can predict values below 0 or above 1, which makes no sense
+  as a probability. The sigmoid curve is monotonic and bounded in (0, 1), so its output
+  can always be read as "probability of the positive class." The weights are fit by
+  gradient descent to maximize the likelihood of the observed labels.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(11);
+  var W = 640, H = 340, PAD = 46;
+  var svg = document.getElementById("chart");
+  var xDomain = [-1, 11];
+
+  function sx(x) { return PAD + (x - xDomain[0]) / (xDomain[1] - xDomain[0]) * (W - PAD * 1.4); }
+  function syProb(p) { return H - PAD - p * (H - PAD * 1.7); } // p in [0,1]
+
+  var points = [];
+  function makePoints() {
+    points = [];
+    for (var i = 0; i < 24; i++) {
+      var cls = i % 2;
+      var x = cls === 0 ? rand() * 5 + MLViz.gaussian(rand) * 1.1 : rand() * 5 + 4.5 + MLViz.gaussian(rand) * 1.1;
+      x = Math.max(-0.5, Math.min(10.5, x));
+      points.push({ x: x, y: cls });
+    }
+  }
+
+  function sigmoid(z) { return 1 / (1 + Math.exp(-z)); }
+
+  function trainLogReg() {
+    var w = 0, b = 0, lr = 0.15;
+    for (var epoch = 0; epoch < 800; epoch++) {
+      var gw = 0, gb = 0;
+      points.forEach(function (p) {
+        var pred = sigmoid(w * p.x + b);
+        var err = pred - p.y;
+        gw += err * p.x; gb += err;
+      });
+      w -= lr * gw / points.length;
+      b -= lr * gb / points.length;
+    }
+    return { w: w, b: b };
+  }
+
+  var model = { w: 0, b: 0 };
+  var threshold = 0.5;
+
+  function render() {
+    svg.innerHTML = "";
+    var grid = MLViz.svgEl("g", {});
+    for (var gx = 0; gx <= 10; gx += 2) {
+      grid.appendChild(MLViz.svgEl("line", { x1: sx(gx), y1: syProb(0), x2: sx(gx), y2: syProb(1), stroke: "var(--grid)", "stroke-width": 1 }));
+    }
+    [0, 0.25, 0.5, 0.75, 1].forEach(function (gy) {
+      grid.appendChild(MLViz.svgEl("line", { x1: sx(xDomain[0]), y1: syProb(gy), x2: sx(xDomain[1]), y2: syProb(gy), stroke: "var(--grid)", "stroke-width": 1 }));
+    });
+    svg.appendChild(grid);
+    svg.appendChild(MLViz.svgEl("line", { x1: sx(xDomain[0]), y1: syProb(0), x2: sx(xDomain[1]), y2: syProb(0), stroke: "var(--baseline)", "stroke-width": 1.5 }));
+
+    // threshold guide line
+    svg.appendChild(MLViz.svgEl("line", { x1: sx(xDomain[0]), y1: syProb(threshold), x2: sx(xDomain[1]), y2: syProb(threshold), stroke: "var(--series-4)", "stroke-width": 1, "stroke-dasharray": "4,4", opacity: 0.6 }));
+
+    // sigmoid curve
+    var d = "";
+    for (var i = 0; i <= 120; i++) {
+      var x = xDomain[0] + (xDomain[1] - xDomain[0]) * i / 120;
+      var p = sigmoid(model.w * x + model.b);
+      d += (i === 0 ? "M" : "L") + sx(x).toFixed(1) + "," + syProb(p).toFixed(1) + " ";
+    }
+    svg.appendChild(MLViz.svgEl("path", { d: d, fill: "none", stroke: "var(--series-4)", "stroke-width": 2.5 }));
+
+    // decision boundary: solve w*x+b = logit(threshold)
+    var logit = Math.log(threshold / (1 - threshold));
+    var xBoundary = (logit - model.b) / model.w;
+    if (isFinite(xBoundary)) {
+      svg.appendChild(MLViz.svgEl("line", { x1: sx(xBoundary), y1: syProb(0) + 10, x2: sx(xBoundary), y2: syProb(1) - 6, stroke: "var(--series-8)", "stroke-width": 2, "stroke-dasharray": "2,4" }));
+    }
+
+    var correct = 0;
+    points.forEach(function (p) {
+      var prob = sigmoid(model.w * p.x + model.b);
+      var predClass = prob >= threshold ? 1 : 0;
+      var ok = predClass === p.y;
+      if (ok) correct++;
+      var cy = syProb(p.y === 1 ? 0.97 : 0.03);
+      var g = MLViz.svgEl("g", {});
+      if (!ok) {
+        g.appendChild(MLViz.svgEl("circle", { cx: sx(p.x), cy: cy, r: 10, fill: "none", stroke: "var(--series-8)", "stroke-width": 2 }));
+      }
+      g.appendChild(MLViz.svgEl("circle", { cx: sx(p.x), cy: cy, r: 6, fill: p.y === 1 ? "var(--series-2)" : "var(--series-1)", stroke: "var(--surface-1)", "stroke-width": 1.5 }));
+      svg.appendChild(g);
+    });
+
+    document.getElementById("statAcc").textContent = (100 * correct / points.length).toFixed(0) + "%";
+    document.getElementById("statW").textContent = model.w.toFixed(2);
+    document.getElementById("statB").textContent = model.b.toFixed(2);
+  }
+
+  document.getElementById("thresh").addEventListener("input", function (e) {
+    threshold = parseFloat(e.target.value);
+    document.getElementById("threshVal").textContent = threshold.toFixed(2);
+    render();
+  });
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    makePoints(); model = trainLogReg(); render();
+  });
+
+  makePoints();
+  model = trainLogReg();
+  render();
+})();
+</script>
+</body>
+</html>

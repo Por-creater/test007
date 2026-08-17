@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stacking | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag ensemble">14 · Bonus · Ensemble</p>
+  <h1>Stacking</h1>
+  <p class="lede">Stacking trains several different base models on the same data,
+  then treats <em>their predictions</em> as input features for a final
+  <strong>meta-learner</strong>, which learns how much to trust each base model and how
+  to blend them. Unlike a forest's simple vote, the blend weights are themselves
+  learned.</p>
+
+  <div class="viz-wrap">
+    <svg id="chart" viewBox="0 0 640 320" width="640" height="320"></svg>
+    <div class="controls">
+      <button class="btn" id="resetBtn">New random data</button>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--text-muted)"></span>true data</span>
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>base: linear</span>
+      <span class="item"><span class="swatch" style="background:var(--series-4)"></span>base: stump</span>
+      <span class="item"><span class="swatch" style="background:var(--series-3)"></span>base: kNN (k=3)</span>
+      <span class="item"><span class="swatch" style="background:var(--series-8)"></span>meta-learner blend</span>
+    </div>
+  </div>
+
+  <div class="viz-wrap">
+    <div class="muted" style="margin-bottom:10px;">what the meta-learner learned to weigh each base model</div>
+    <div id="weightBars"></div>
+  </div>
+
+  <div class="viz-wrap">
+    <svg id="diagram" viewBox="0 0 640 160" width="640" height="160"></svg>
+  </div>
+
+  <p class="muted">Notice the blend (red) tracks whichever base model is doing best
+  in each region of x, rather than being a fixed average — that flexibility is what
+  a learned meta-model buys over a plain vote.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(41);
+  var data = [];
+  function target(x) { return x < 3.5 ? 2 : (x < 7 ? 6.5 : 3.5) + Math.sin(x) * 0.6; }
+
+  function makeData() {
+    data = [];
+    for (var i = 0; i < 26; i++) {
+      var x = rand() * 10;
+      data.push({ x: x, y: target(x) + MLViz.gaussian(rand) * 0.4 });
+    }
+    data.sort(function (a, b) { return a.x - b.x; });
+  }
+
+  // --- base model A: linear regression ---
+  function fitLinear() {
+    var n = data.length, mx = 0, my = 0;
+    data.forEach(function (p) { mx += p.x; my += p.y; }); mx /= n; my /= n;
+    var num = 0, den = 0;
+    data.forEach(function (p) { num += (p.x - mx) * (p.y - my); den += (p.x - mx) * (p.x - mx); });
+    var w = den === 0 ? 0 : num / den, b = my - w * mx;
+    return function (x) { return w * x + b; };
+  }
+
+  // --- base model B: decision stump (regression) ---
+  function fitStump() {
+    var best = null;
+    var xs = data.map(function (p) { return p.x; }).sort(function (a, b) { return a - b; });
+    for (var i = 1; i < xs.length; i++) {
+      var t = (xs[i - 1] + xs[i]) / 2;
+      var left = data.filter(function (p) { return p.x <= t; });
+      var right = data.filter(function (p) { return p.x > t; });
+      if (!left.length || !right.length) continue;
+      var lv = left.reduce(function (s, p) { return s + p.y; }, 0) / left.length;
+      var rv = right.reduce(function (s, p) { return s + p.y; }, 0) / right.length;
+      var sse = 0;
+      left.forEach(function (p) { sse += (p.y - lv) * (p.y - lv); });
+      right.forEach(function (p) { sse += (p.y - rv) * (p.y - rv); });
+      if (!best || sse < best.sse) best = { t: t, lv: lv, rv: rv, sse: sse };
+    }
+    return function (x) { return x <= best.t ? best.lv : best.rv; };
+  }
+
+  // --- base model C: kNN regression ---
+  function fitKnn(k) {
+    return function (x) {
+      var sorted = data.slice().sort(function (a, b) { return Math.abs(a.x - x) - Math.abs(b.x - x); });
+      var top = sorted.slice(0, k);
+      return top.reduce(function (s, p) { return s + p.y; }, 0) / top.length;
+    };
+  }
+
+  // --- meta-learner: multiple linear regression via gradient descent ---
+  function fitMeta(baseFns) {
+    var feats = data.map(function (p) { return baseFns.map(function (f) { return f(p.x); }); });
+    var w = [0, 0, 0], b = 0, lr = 0.02;
+    for (var epoch = 0; epoch < 600; epoch++) {
+      var gW = [0, 0, 0], gB = 0;
+      for (var i = 0; i < data.length; i++) {
+        var pred = b;
+        for (var j = 0; j < 3; j++) pred += w[j] * feats[i][j];
+        var err = pred - data[i].y;
+        for (var j2 = 0; j2 < 3; j2++) gW[j2] += err * feats[i][j2];
+        gB += err;
+      }
+      for (var j3 = 0; j3 < 3; j3++) w[j3] -= lr * gW[j3] / data.length;
+      b -= lr * gB / data.length;
+    }
+    return { w: w, b: b };
+  }
+
+  var svg = document.getElementById("chart");
+  var W = 640, H = 320, PAD = 34;
+  var yDomain = [0, 9];
+  function sx(x) { return PAD + x / 10 * (W - PAD * 2); }
+  function sy(y) { return H - PAD - (y - yDomain[0]) / (yDomain[1] - yDomain[0]) * (H - PAD * 2); }
+
+  function curvePath(fn) {
+    var d = "";
+    for (var i = 0; i <= 100; i++) {
+      var x = i / 10;
+      d += (i === 0 ? "M" : "L") + sx(x).toFixed(1) + "," + sy(fn(x)).toFixed(1) + " ";
+    }
+    return d;
+  }
+
+  function render() {
+    var linear = fitLinear(), stump = fitStump(), knn = fitKnn(3);
+    var meta = fitMeta([linear, stump, knn]);
+    function blend(x) { return meta.b + meta.w[0] * linear(x) + meta.w[1] * stump(x) + meta.w[2] * knn(x); }
+
+    svg.innerHTML = "";
+    for (var g = 0; g <= 10; g += 2) svg.appendChild(MLViz.svgEl("line", { x1: sx(g), y1: sy(yDomain[0]), x2: sx(g), y2: sy(yDomain[1]), stroke: "var(--grid)", "stroke-width": 1 }));
+    svg.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(yDomain[0]), x2: sx(10), y2: sy(yDomain[0]), stroke: "var(--baseline)", "stroke-width": 1.4 }));
+
+    svg.appendChild(MLViz.svgEl("path", { d: curvePath(linear), fill: "none", stroke: "var(--series-1)", "stroke-width": 1.6, opacity: 0.85 }));
+    svg.appendChild(MLViz.svgEl("path", { d: curvePath(stump), fill: "none", stroke: "var(--series-4)", "stroke-width": 1.6, opacity: 0.85 }));
+    svg.appendChild(MLViz.svgEl("path", { d: curvePath(knn), fill: "none", stroke: "var(--series-3)", "stroke-width": 1.6, opacity: 0.85 }));
+    svg.appendChild(MLViz.svgEl("path", { d: curvePath(blend), fill: "none", stroke: "var(--series-8)", "stroke-width": 3 }));
+
+    data.forEach(function (p) {
+      svg.appendChild(MLViz.svgEl("circle", { cx: sx(p.x), cy: sy(p.y), r: 4.2, fill: "var(--text-muted)", stroke: "var(--surface-1)", "stroke-width": 1 }));
+    });
+
+    renderWeights(meta);
+    renderDiagram(meta);
+  }
+
+  function renderWeights(meta) {
+    var wrap = document.getElementById("weightBars");
+    wrap.innerHTML = "";
+    var names = ["linear", "stump", "kNN (k=3)"];
+    var colors = ["var(--series-1)", "var(--series-4)", "var(--series-3)"];
+    var maxAbs = Math.max(0.2, Math.max.apply(null, meta.w.map(Math.abs)));
+    meta.w.forEach(function (w, i) {
+      var row = document.createElement("div");
+      row.style.display = "flex"; row.style.alignItems = "center"; row.style.gap = "10px"; row.style.marginBottom = "8px";
+      var label = document.createElement("div");
+      label.style.width = "90px"; label.style.fontSize = "12.5px"; label.style.color = "var(--text-secondary)";
+      label.textContent = names[i];
+      var track = document.createElement("div");
+      track.style.flex = "1"; track.style.height = "10px"; track.style.background = "var(--surface-2)"; track.style.borderRadius = "6px"; track.style.position = "relative"; track.style.overflow = "hidden";
+      var fill = document.createElement("div");
+      var pct = Math.abs(w) / maxAbs * 100;
+      fill.style.height = "100%"; fill.style.width = pct + "%"; fill.style.background = colors[i];
+      fill.style.marginLeft = w < 0 ? "auto" : "0";
+      track.appendChild(fill);
+      var val = document.createElement("div");
+      val.className = "mono"; val.style.width = "50px"; val.style.fontSize = "12px"; val.style.color = "var(--text-primary)";
+      val.textContent = w.toFixed(2);
+      row.appendChild(label); row.appendChild(track); row.appendChild(val);
+      wrap.appendChild(row);
+    });
+  }
+
+  function renderDiagram(meta) {
+    var svgD = document.getElementById("diagram");
+    svgD.innerHTML = "";
+    var bases = [{ name: "Linear", y: 25, color: "var(--series-1)" }, { name: "Stump", y: 75, color: "var(--series-4)" }, { name: "kNN", y: 125, color: "var(--series-3)" }];
+    bases.forEach(function (b) {
+      svgD.appendChild(MLViz.svgEl("rect", { x: 20, y: b.y - 15, width: 100, height: 30, rx: 8, fill: "var(--surface-2)", stroke: b.color, "stroke-width": 1.5 }));
+      var t = MLViz.svgEl("text", { x: 70, y: b.y + 5, "text-anchor": "middle", "font-size": 12, fill: "var(--text-primary)" });
+      t.textContent = b.name; svgD.appendChild(t);
+      svgD.appendChild(MLViz.svgEl("line", { x1: 120, y1: b.y, x2: 260, y2: 75, stroke: b.color, "stroke-width": 1.4, opacity: 0.6 }));
+    });
+    svgD.appendChild(MLViz.svgEl("rect", { x: 260, y: 55, width: 130, height: 40, rx: 8, fill: "var(--surface-2)", stroke: "var(--series-8)", "stroke-width": 1.5 }));
+    var mt = MLViz.svgEl("text", { x: 325, y: 79, "text-anchor": "middle", "font-size": 12, fill: "var(--text-primary)" });
+    mt.textContent = "Meta-learner"; svgD.appendChild(mt);
+    svgD.appendChild(MLViz.svgEl("line", { x1: 390, y1: 75, x2: 500, y2: 75, stroke: "var(--series-8)", "stroke-width": 2 }));
+    svgD.appendChild(MLViz.svgEl("rect", { x: 500, y: 55, width: 120, height: 40, rx: 8, fill: "color-mix(in srgb, var(--series-8) 20%, var(--surface-2))", stroke: "var(--series-8)", "stroke-width": 1.5 }));
+    var ft = MLViz.svgEl("text", { x: 560, y: 79, "text-anchor": "middle", "font-size": 12, fill: "var(--text-primary)" });
+    ft.textContent = "Final blend"; svgD.appendChild(ft);
+  }
+
+  document.getElementById("resetBtn").addEventListener("click", function () { makeData(); render(); });
+
+  makeData();
+  render();
+})();
+</script>
+</body>
+</html>

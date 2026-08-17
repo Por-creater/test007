@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linear Regression | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag supervised">01 · Supervised Learning · Regression</p>
+  <h1>Linear Regression</h1>
+  <p class="lede">Linear regression fits a straight line <code>y&nbsp;=&nbsp;wx&nbsp;+&nbsp;b</code> through a
+  set of points by choosing <code>w</code> and <code>b</code> to minimize the sum of squared
+  vertical distances (residuals) between the line and every point — the "least squares" fit.</p>
+
+  <div class="viz-wrap">
+    <svg id="chart" viewBox="0 0 640 360" width="640" height="360"></svg>
+    <div class="controls">
+      <button class="btn primary" id="fitBtn">Fit best line (least squares)</button>
+      <button class="btn" id="resetBtn">New random points</button>
+      <label class="control"><input type="checkbox" id="residualsChk" checked> show residuals</label>
+    </div>
+    <div class="stat-row">
+      <div class="stat"><div class="num" id="statW">–</div><div class="lbl">slope w</div></div>
+      <div class="stat"><div class="num" id="statB">–</div><div class="lbl">intercept b</div></div>
+      <div class="stat"><div class="num" id="statMSE">–</div><div class="lbl">mean squared error</div></div>
+      <div class="stat"><div class="num" id="statR2">–</div><div class="lbl">R²</div></div>
+    </div>
+    <div class="legend">
+      <span class="item"><span class="swatch" style="background:var(--series-1)"></span>data point (drag me)</span>
+      <span class="item"><span class="swatch" style="background:var(--series-2)"></span>fitted line</span>
+      <span class="item"><span class="swatch" style="background:var(--series-8)"></span>residual</span>
+    </div>
+  </div>
+
+  <p class="muted">Try it: drag any point up or down and click "Fit best line" again — the line
+  re-balances itself to keep the total squared residual as small as possible.</p>
+
+  <h2>How the fit is computed</h2>
+  <p>With n points, the closed-form least-squares solution is
+  <code>w = Σ(x−x̄)(y−ȳ) / Σ(x−x̄)²</code> and <code>b = ȳ − w·x̄</code>. This is the same
+  line that a single step of gradient descent converges to when trained on squared error —
+  regression has an exact algebraic solution, no iteration required.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var rand = MLViz.mulberry32(7);
+  var W = 640, H = 360, PAD = 44;
+  var svg = document.getElementById("chart");
+  var xDomain = [0, 10], yDomain = [0, 10];
+
+  function sx(x) { return PAD + (x - xDomain[0]) / (xDomain[1] - xDomain[0]) * (W - PAD * 1.5); }
+  function sy(y) { return H - PAD - (y - yDomain[0]) / (yDomain[1] - yDomain[0]) * (H - PAD * 1.5); }
+  function ix(px) { return xDomain[0] + (px - PAD) / (W - PAD * 1.5) * (xDomain[1] - xDomain[0]); }
+  function iy(py) { return yDomain[0] + (H - PAD - py) / (H - PAD * 1.5) * (yDomain[1] - yDomain[0]); }
+
+  var points = [];
+  function makePoints() {
+    points = [];
+    var trueW = 0.7 + rand() * 0.6, trueB = 1.5 + rand() * 2;
+    for (var i = 0; i < 14; i++) {
+      var x = 0.5 + rand() * 9;
+      var y = trueW * x + trueB + MLViz.gaussian(rand) * 1.1;
+      y = Math.max(0.3, Math.min(9.7, y));
+      points.push({ x: x, y: y });
+    }
+  }
+
+  function fit() {
+    var n = points.length, mx = 0, my = 0;
+    points.forEach(function (p) { mx += p.x; my += p.y; });
+    mx /= n; my /= n;
+    var num = 0, den = 0;
+    points.forEach(function (p) { num += (p.x - mx) * (p.y - my); den += (p.x - mx) * (p.x - mx); });
+    var w = den === 0 ? 0 : num / den;
+    var b = my - w * mx;
+    return { w: w, b: b };
+  }
+
+  function metrics(w, b) {
+    var n = points.length, sse = 0, sst = 0, my = 0;
+    points.forEach(function (p) { my += p.y; }); my /= n;
+    points.forEach(function (p) {
+      var pred = w * p.x + b;
+      sse += (p.y - pred) * (p.y - pred);
+      sst += (p.y - my) * (p.y - my);
+    });
+    return { mse: sse / n, r2: sst === 0 ? 1 : 1 - sse / sst };
+  }
+
+  var draggingIdx = -1;
+  var showResiduals = true;
+
+  function render() {
+    svg.innerHTML = "";
+    var grid = MLViz.svgEl("g", {});
+    for (var gx = 0; gx <= 10; gx += 2) {
+      grid.appendChild(MLViz.svgEl("line", { x1: sx(gx), y1: sy(0), x2: sx(gx), y2: sy(10), stroke: "var(--grid)", "stroke-width": 1 }));
+    }
+    for (var gy = 0; gy <= 10; gy += 2) {
+      grid.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(gy), x2: sx(10), y2: sy(gy), stroke: "var(--grid)", "stroke-width": 1 }));
+    }
+    svg.appendChild(grid);
+    svg.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(0), x2: sx(10), y2: sy(0), stroke: "var(--baseline)", "stroke-width": 1.5 }));
+    svg.appendChild(MLViz.svgEl("line", { x1: sx(0), y1: sy(0), x2: sx(0), y2: sy(10), stroke: "var(--baseline)", "stroke-width": 1.5 }));
+
+    var f = fit();
+    var m = metrics(f.w, f.b);
+
+    if (showResiduals) {
+      points.forEach(function (p) {
+        var pred = f.w * p.x + f.b;
+        svg.appendChild(MLViz.svgEl("line", {
+          x1: sx(p.x), y1: sy(p.y), x2: sx(p.x), y2: sy(pred),
+          stroke: "var(--series-8)", "stroke-width": 1.5, "stroke-dasharray": "3,3", opacity: 0.85
+        }));
+      });
+    }
+
+    var y0 = f.w * xDomain[0] + f.b, y1 = f.w * xDomain[1] + f.b;
+    svg.appendChild(MLViz.svgEl("line", {
+      x1: sx(xDomain[0]), y1: sy(y0), x2: sx(xDomain[1]), y2: sy(y1),
+      stroke: "var(--series-2)", "stroke-width": 3, "stroke-linecap": "round"
+    }));
+
+    points.forEach(function (p, i) {
+      var c = MLViz.svgEl("circle", {
+        cx: sx(p.x), cy: sy(p.y), r: 7, fill: "var(--series-1)",
+        stroke: "var(--surface-1)", "stroke-width": 2, style: "cursor:grab"
+      });
+      c.dataset.idx = i;
+      svg.appendChild(c);
+    });
+
+    document.getElementById("statW").textContent = f.w.toFixed(2);
+    document.getElementById("statB").textContent = f.b.toFixed(2);
+    document.getElementById("statMSE").textContent = m.mse.toFixed(2);
+    document.getElementById("statR2").textContent = m.r2.toFixed(3);
+  }
+
+  function svgPoint(evt) {
+    var pt = svg.createSVGPoint();
+    var t = evt.touches ? evt.touches[0] : evt;
+    pt.x = t.clientX; pt.y = t.clientY;
+    var loc = pt.matrixTransform(svg.getScreenCTM().inverse());
+    return loc;
+  }
+
+  svg.addEventListener("pointerdown", function (evt) {
+    var loc = svgPoint(evt);
+    var best = -1, bestD = 400;
+    points.forEach(function (p, i) {
+      var d = Math.hypot(sx(p.x) - loc.x, sy(p.y) - loc.y);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    if (best >= 0) { draggingIdx = best; svg.setPointerCapture(evt.pointerId); }
+  });
+  svg.addEventListener("pointermove", function (evt) {
+    if (draggingIdx < 0) return;
+    var loc = svgPoint(evt);
+    points[draggingIdx].x = Math.max(0.2, Math.min(9.8, ix(loc.x)));
+    points[draggingIdx].y = Math.max(0.2, Math.min(9.8, iy(loc.y)));
+    render();
+  });
+  ["pointerup", "pointerleave"].forEach(function (ev) {
+    svg.addEventListener(ev, function () { draggingIdx = -1; });
+  });
+
+  document.getElementById("fitBtn").addEventListener("click", render);
+  document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); render(); });
+  document.getElementById("residualsChk").addEventListener("change", function (e) {
+    showResiduals = e.target.checked; render();
+  });
+
+  makePoints();
+  render();
+})();
+</script>
+</body>
+</html>

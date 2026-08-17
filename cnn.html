@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CNN | ML Algorithms, Visualized</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<main>
+  <p class="tag deep">09 · Deep Learning · Convolutional Network</p>
+  <h1>Convolutional Neural Network (CNN)</h1>
+  <p class="lede">A convolution slides a small learned <strong>kernel</strong> across the
+  image, and at every position computes one number: the sum of the kernel's weights
+  multiplied element-wise with the pixels underneath it. That single scalar becomes
+  one pixel of the output feature map — repeating this everywhere turns a full image
+  into a map of "how strongly does this pattern appear here."</p>
+
+  <div class="viz-wrap">
+    <div style="display:flex; gap:28px; flex-wrap:wrap; align-items:flex-start;">
+      <div>
+        <div class="muted" style="margin-bottom:6px;">input (10 × 10)</div>
+        <svg id="inputGrid" viewBox="0 0 300 300" width="300" height="300"></svg>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">3×3 kernel (vertical-edge detector)</div>
+        <svg id="kernelGrid" viewBox="0 0 96 96" width="96" height="96"></svg>
+        <div class="mono" id="dotProduct" style="margin-top:10px; font-size:12.5px; color:var(--text-secondary); max-width:220px; white-space:pre-line;">click "step" to begin</div>
+      </div>
+      <div>
+        <div class="muted" style="margin-bottom:6px;">output feature map (8 × 8)</div>
+        <svg id="outputGrid" viewBox="0 0 240 240" width="240" height="240"></svg>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn primary" id="stepBtn">Step ▸</button>
+      <button class="btn" id="playBtn">▶ Play</button>
+      <button class="btn" id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <p class="muted">Bright output cells mark where the kernel's pattern (a vertical
+  brightness change) lines up with the image. In a real CNN dozens of kernels run in
+  parallel, and their weights are learned by backpropagation rather than hand-set.</p>
+</main>
+
+<script src="assets/main.js"></script>
+<script>
+(function () {
+  var N = 10, K = 3, OUT = N - K + 1;
+  var image = [];
+  for (var r = 0; r < N; r++) {
+    var row = [];
+    for (var c = 0; c < N; c++) {
+      // a synthetic image: bright square in the middle-right + soft gradient
+      var inBox = r >= 2 && r <= 7 && c >= 5 && c <= 8;
+      row.push(inBox ? 0.85 : 0.12 + (c / N) * 0.15);
+    }
+    image.push(row);
+  }
+  var kernel = [[1, 0, -1], [1, 0, -1], [1, 0, -1]];
+  var output = [];
+  for (var i = 0; i < OUT; i++) output.push(new Array(OUT).fill(null));
+
+  var pos = { r: 0, c: -1 };
+  var inputSvg = document.getElementById("inputGrid");
+  var kernelSvg = document.getElementById("kernelGrid");
+  var outputSvg = document.getElementById("outputGrid");
+
+  function gray(v) {
+    var l = Math.round(v * 255);
+    return "rgb(" + l + "," + l + "," + l + ")";
+  }
+  function heat(v) {
+    // map roughly [-3,3] to blue<->orange
+    var t = Math.max(-1, Math.min(1, v / 3));
+    if (t >= 0) return "color-mix(in srgb, var(--series-2) " + Math.round(t * 100) + "%, var(--surface-2))";
+    return "color-mix(in srgb, var(--series-1) " + Math.round(-t * 100) + "%, var(--surface-2))";
+  }
+
+  function renderKernel() {
+    kernelSvg.innerHTML = "";
+    var cs = 32;
+    for (var r = 0; r < K; r++) {
+      for (var c = 0; c < K; c++) {
+        kernelSvg.appendChild(MLViz.svgEl("rect", { x: c * cs, y: r * cs, width: cs - 2, height: cs - 2, fill: "var(--surface-2)", stroke: "var(--border)" }));
+        var t = MLViz.svgEl("text", { x: c * cs + cs / 2 - 1, y: r * cs + cs / 2 + 4, "text-anchor": "middle", "font-size": 13, fill: "var(--text-primary)" });
+        t.textContent = kernel[r][c];
+        kernelSvg.appendChild(t);
+      }
+    }
+  }
+
+  function renderInput() {
+    inputSvg.innerHTML = "";
+    var cs = 30;
+    for (var r = 0; r < N; r++) {
+      for (var c = 0; c < N; c++) {
+        var underKernel = pos.c >= 0 && r >= pos.r && r < pos.r + K && c >= pos.c && c < pos.c + K;
+        inputSvg.appendChild(MLViz.svgEl("rect", {
+          x: c * cs, y: r * cs, width: cs - 1, height: cs - 1,
+          fill: gray(image[r][c]),
+          stroke: underKernel ? "var(--series-8)" : "transparent",
+          "stroke-width": underKernel ? 2 : 0
+        }));
+      }
+    }
+  }
+
+  function renderOutput() {
+    outputSvg.innerHTML = "";
+    var cs = 30;
+    for (var r = 0; r < OUT; r++) {
+      for (var c = 0; c < OUT; c++) {
+        var v = output[r][c];
+        var isCurrent = r === pos.r && c === pos.c;
+        outputSvg.appendChild(MLViz.svgEl("rect", {
+          x: c * cs, y: r * cs, width: cs - 1, height: cs - 1,
+          fill: v === null ? "var(--surface-2)" : heat(v),
+          stroke: isCurrent ? "var(--series-8)" : "var(--border)",
+          "stroke-width": isCurrent ? 2 : 1
+        }));
+      }
+    }
+  }
+
+  function step() {
+    pos.c++;
+    if (pos.c >= OUT) { pos.c = 0; pos.r++; }
+    if (pos.r >= OUT) { pos.r = 0; pos.c = 0; for (var i = 0; i < OUT; i++) output[i].fill(null); }
+    var sum = 0, terms = [];
+    for (var kr = 0; kr < K; kr++) {
+      for (var kc = 0; kc < K; kc++) {
+        var pix = image[pos.r + kr][pos.c + kc];
+        sum += pix * kernel[kr][kc];
+        if (kernel[kr][kc] !== 0) terms.push((pix).toFixed(2) + "×" + kernel[kr][kc]);
+      }
+    }
+    output[pos.r][pos.c] = sum;
+    document.getElementById("dotProduct").textContent =
+      "position (" + pos.r + "," + pos.c + ")\nΣ = " + terms.join(" + ") + "\n= " + sum.toFixed(2);
+    renderInput(); renderOutput();
+  }
+
+  var playing = false, timer = null;
+  document.getElementById("stepBtn").addEventListener("click", step);
+  document.getElementById("resetBtn").addEventListener("click", function () {
+    pos = { r: 0, c: -1 };
+    for (var i = 0; i < OUT; i++) output[i].fill(null);
+    document.getElementById("dotProduct").textContent = "click \"step\" to begin";
+    renderInput(); renderOutput();
+  });
+  document.getElementById("playBtn").addEventListener("click", function (e) {
+    playing = !playing;
+    e.target.textContent = playing ? "⏸ Pause" : "▶ Play";
+    if (playing) timer = setInterval(step, 220); else clearInterval(timer);
+  });
+
+  renderKernel(); renderInput(); renderOutput();
+})();
+</script>
+</body>
+</html>
