@@ -23,6 +23,13 @@
         <input type="range" id="k" min="2" max="5" step="1" value="3">
         <output id="kVal">3</output>
       </div>
+      <div class="control">
+        <label for="initMethod">centroid init</label>
+        <select id="initMethod">
+          <option value="random">Random points</option>
+          <option value="kmeans++">K-Means++</option>
+        </select>
+      </div>
       <button class="btn primary" id="stepBtn">Step ▸</button>
       <button class="btn" id="playBtn">▶ Play</button>
       <button class="btn" id="resetBtn">New random points</button>
@@ -38,6 +45,14 @@
   centroid — it can only go down (or stay flat) as K-Means iterates, which is why
   the algorithm is guaranteed to converge, though not necessarily to the global
   optimum (try "New random points" a few times and watch centroids land differently).</p>
+
+  <h2>Why initialization is a parameter too</h2>
+  <p><strong>Random</strong> init just picks k existing points at random as starting
+  centroids — fast, but two centroids can land close together and split a cluster
+  in half instead of covering the space. <strong>K-Means++</strong> instead picks the
+  first centroid randomly, then keeps picking new centroids weighted toward points
+  that are far from any centroid chosen so far, spreading the starting positions out.
+  It usually converges in fewer iterations to a lower final inertia.</p>
 </main>
 
 <script src="assets/main.js"></script>
@@ -69,9 +84,32 @@
   var centroids = [], k = 3, iteration = 0, phase = "assign", playing = false, timer = null;
 
   function initCentroids() {
+    var method = document.getElementById("initMethod").value;
     centroids = [];
-    var shuffled = points.slice().sort(function () { return rand() - 0.5; });
-    for (var i = 0; i < k; i++) centroids.push({ x: shuffled[i].x, y: shuffled[i].y });
+    if (method === "kmeans++") {
+      var first = points[Math.floor(rand() * points.length)];
+      centroids.push({ x: first.x, y: first.y });
+      while (centroids.length < k) {
+        var dists = points.map(function (p) {
+          var best = Infinity;
+          centroids.forEach(function (c) {
+            var d = (c.x - p.x) * (c.x - p.x) + (c.y - p.y) * (c.y - p.y);
+            if (d < best) best = d;
+          });
+          return best;
+        });
+        var total = dists.reduce(function (a, b) { return a + b; }, 0);
+        var r = rand() * total, acc = 0, chosen = points[points.length - 1];
+        for (var i = 0; i < points.length; i++) {
+          acc += dists[i];
+          if (acc >= r) { chosen = points[i]; break; }
+        }
+        centroids.push({ x: chosen.x, y: chosen.y });
+      }
+    } else {
+      var shuffled = points.slice().sort(function () { return rand() - 0.5; });
+      for (var j = 0; j < k; j++) centroids.push({ x: shuffled[j].x, y: shuffled[j].y });
+    }
     points.forEach(function (p) { p.assign = -1; });
     iteration = 0; phase = "assign";
   }
@@ -143,6 +181,7 @@
 
   document.getElementById("stepBtn").addEventListener("click", step);
   document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); initCentroids(); render(); });
+  document.getElementById("initMethod").addEventListener("change", function () { initCentroids(); render(); });
   document.getElementById("k").addEventListener("input", function (e) {
     k = parseInt(e.target.value, 10);
     document.getElementById("kVal").textContent = k;
