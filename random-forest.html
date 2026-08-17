@@ -23,6 +23,11 @@
         <input type="range" id="ntrees" min="1" max="9" step="2" value="5">
         <output id="ntreesVal">5</output>
       </div>
+      <div class="control">
+        <label for="maxDepth">max depth per tree</label>
+        <input type="range" id="maxDepth" min="1" max="5" step="1" value="3">
+        <output id="maxDepthVal">3</output>
+      </div>
       <button class="btn" id="regrowBtn">Regrow forest</button>
     </div>
     <div class="legend">
@@ -39,7 +44,11 @@
 
   <p class="muted">Every mini panel shows a different resample of the same 26 points
   (some repeated, some left out) and the splits that particular tree learned. No two
-  trees agree perfectly — that disagreement is exactly what makes the vote robust.</p>
+  trees agree perfectly — that disagreement is exactly what makes the vote robust.
+  "Max depth per tree" is the same overfitting knob as on the single decision tree
+  page: shallow trees underfit individually but average into a smoother, more stable
+  boundary; deep trees fit their own sample tightly, so the ensemble leans more on
+  the votes canceling each other's noise out.</p>
 </main>
 
 <script src="assets/main.js"></script>
@@ -114,12 +123,12 @@
   }
 
   var forest = [];
-  function growForest(n) {
+  function growForest(n, maxDepth) {
     forest = [];
     for (var i = 0; i < n; i++) {
       var rng = MLViz.mulberry32(100 + i * 17 + Math.floor(rand() * 1000));
       var sample = bootstrapSample(basePoints, rng);
-      var tree = buildTree(sample, { xmin: 0, xmax: DOMAIN, ymin: 0, ymax: DOMAIN }, 0, 3, rng);
+      var tree = buildTree(sample, { xmin: 0, xmax: DOMAIN, ymin: 0, ymax: DOMAIN }, 0, maxDepth, rng);
       forest.push({ tree: tree, sample: sample });
     }
   }
@@ -199,13 +208,18 @@
 
   function rebuildAll() {
     var n = parseInt(document.getElementById("ntrees").value, 10);
-    growForest(n);
+    var maxDepth = parseInt(document.getElementById("maxDepth").value, 10);
+    growForest(n, maxDepth);
     renderMap();
     renderMiniTrees();
   }
 
   document.getElementById("ntrees").addEventListener("input", function (e) {
     document.getElementById("ntreesVal").textContent = e.target.value;
+    rebuildAll();
+  });
+  document.getElementById("maxDepth").addEventListener("input", function (e) {
+    document.getElementById("maxDepthVal").textContent = e.target.value;
     rebuildAll();
   });
   document.getElementById("regrowBtn").addEventListener("click", rebuildAll);
