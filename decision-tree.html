@@ -23,6 +23,11 @@
         <input type="range" id="depth" min="1" max="5" step="1" value="3">
         <output id="depthVal">3</output>
       </div>
+      <div class="control">
+        <label for="minLeaf">min samples per leaf</label>
+        <input type="range" id="minLeaf" min="1" max="8" step="1" value="4">
+        <output id="minLeafVal">4</output>
+      </div>
       <button class="btn" id="resetBtn">New random points</button>
     </div>
     <div class="legend">
@@ -74,7 +79,7 @@
     return 1 - p0 * p0 - p1 * p1;
   }
 
-  function bestSplit(pts) {
+  function bestSplit(pts, minLeaf) {
     var best = null;
     ["x", "y"].forEach(function (axis) {
       var vals = pts.map(function (p) { return p[axis]; }).sort(function (a, b) { return a - b; });
@@ -82,7 +87,7 @@
         var t = (vals[i - 1] + vals[i]) / 2;
         var left = pts.filter(function (p) { return p[axis] <= t; });
         var right = pts.filter(function (p) { return p[axis] > t; });
-        if (left.length === 0 || right.length === 0) continue;
+        if (left.length < minLeaf || right.length < minLeaf) continue;
         var impurity = (left.length * gini(left) + right.length * gini(right)) / pts.length;
         if (!best || impurity < best.impurity) best = { axis: axis, t: t, impurity: impurity, left: left, right: right };
       }
@@ -95,20 +100,20 @@
     return c0 >= pts.length - c0 ? 0 : 1;
   }
 
-  function buildTree(pts, box, depth, maxDepth) {
+  function buildTree(pts, box, depth, maxDepth, minLeaf) {
     var g = gini(pts);
-    if (depth >= maxDepth || g === 0 || pts.length < 4) {
+    if (depth >= maxDepth || g === 0 || pts.length < minLeaf * 2) {
       return { leaf: true, cls: majority(pts), n: pts.length, box: box };
     }
-    var split = bestSplit(pts);
+    var split = bestSplit(pts, minLeaf);
     if (!split) return { leaf: true, cls: majority(pts), n: pts.length, box: box };
     var leftBox = Object.assign({}, box), rightBox = Object.assign({}, box);
     if (split.axis === "x") { leftBox.xmax = split.t; rightBox.xmin = split.t; }
     else { leftBox.ymax = split.t; rightBox.ymin = split.t; }
     return {
       leaf: false, axis: split.axis, t: split.t, box: box, n: pts.length,
-      left: buildTree(split.left, leftBox, depth + 1, maxDepth),
-      right: buildTree(split.right, rightBox, depth + 1, maxDepth)
+      left: buildTree(split.left, leftBox, depth + 1, maxDepth, minLeaf),
+      right: buildTree(split.right, rightBox, depth + 1, maxDepth, minLeaf)
     };
   }
 
@@ -216,13 +221,18 @@
 
   function rebuild() {
     var maxDepth = parseInt(document.getElementById("depth").value, 10);
-    var tree = buildTree(points, { xmin: 0, xmax: DOMAIN, ymin: 0, ymax: DOMAIN }, 0, maxDepth);
+    var minLeaf = parseInt(document.getElementById("minLeaf").value, 10);
+    var tree = buildTree(points, { xmin: 0, xmax: DOMAIN, ymin: 0, ymax: DOMAIN }, 0, maxDepth, minLeaf);
     renderScatter(tree);
     renderTree(tree);
   }
 
   document.getElementById("depth").addEventListener("input", function (e) {
     document.getElementById("depthVal").textContent = e.target.value;
+    rebuild();
+  });
+  document.getElementById("minLeaf").addEventListener("input", function (e) {
+    document.getElementById("minLeafVal").textContent = e.target.value;
     rebuild();
   });
   document.getElementById("resetBtn").addEventListener("click", function () { makePoints(); rebuild(); });
