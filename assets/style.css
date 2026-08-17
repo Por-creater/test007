@@ -150,6 +150,18 @@ p { color: var(--text-secondary); line-height: 1.65; font-size: 14.5px; }
 .control input[type="range"] { accent-color: var(--series-1); width: 130px; }
 .control output, .control .val { color: var(--text-primary); font-variant-numeric: tabular-nums; min-width: 2.2em; display: inline-block; }
 
+.control select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+.control select:hover { border-color: var(--series-1); }
+
 button.btn {
   font: inherit;
   font-size: 13px;
